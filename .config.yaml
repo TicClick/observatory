@@ -1,0 +1,32 @@
+server:
+  # Local IP to bind to.
+  bind_ip: 127.0.0.1
+
+  # Local port to bind to.
+  port: 3000
+
+  # HTTP endpoint for accepting POST events from GitHub, without leading slash.
+  # The app will listen on http://your-host.com/{endpoint name}
+  events_endpoint: "github-events"
+
+github:
+  # App ID, taken from https://github.com/settings/apps/{your app name}
+  app_id: 123456
+
+  # Path to a private SHA256 key from https://github.com/settings/apps/{your app name}.
+  # It is used to generate JWT, which the app uses for getting per-installation OAuth tokens.
+  app_key_path: "./private-key.pem"
+
+  # A secret string which you can specify at https://github.com/settings/apps/{your app name}.
+  # It is used to verify that requests are correctly signed and coming from GitHub.
+  webhook_secret: "iseedeadpeople"
+
+logging:
+  # Path to the log file. For logging to STDERR, use -
+  file: "-"
+  level: info
+
+controller:
+  # The repository to work with (listen to events, post comments, check pulls, etc).
+  # TODO: this setting needs to disappear in favour of a per-repository pull storage.
+  target_repo: "TicClick/osu-wiki"

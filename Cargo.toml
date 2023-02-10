@@ -1,0 +1,27 @@
+[package]
+name = "observatory"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chrono = { version = "0.4.23", features = ["serde"] }
+clap = { version = "4.1.4", features = ["derive"] }
+eyre = "0.6.8"
+jsonwebtoken = "8.2.0"
+log = "0.4.17"
+log-panics = { version = "2.1.0", features = ["with-backtrace"] }
+reqwest = { version = "0.11.14", features = ["json", "serde_json", "gzip"] }
+serde = "1.0.152"
+serde_json = "1.0.91"
+serde_yaml = "0.9.17"
+simplelog = "0.12.0"
+tokio = { version = "1.24.2", features = ["rt", "macros", "rt-multi-thread"] }
+unidiff = "0.3.3"
+viz = { version = "0.4.4", features = ["json", "limits"] }
+
+# for simplelog format
+time = "0.3.17"
+hmac = "0.12.1"
+ring = "0.16.20"
