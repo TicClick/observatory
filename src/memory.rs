@@ -5,9 +5,10 @@ use std::sync::{Arc, Mutex};
 
 use crate::structs::*;
 
+/// The two-level pull request storage (repository -> pull number -> pull object)
 #[derive(Default, Debug, Clone)]
 pub struct Memory {
-    pub pulls: Arc<Mutex<HashMap<i32, PullRequest>>>,
+    pub pulls: Arc<Mutex<HashMap<String, HashMap<i32, PullRequest>>>>,
 }
 
 impl Memory {
@@ -15,17 +16,25 @@ impl Memory {
         Self::default()
     }
 
-    pub fn insert(&self, new_pull: PullRequest) {
+    pub fn insert(&self, full_repo_name: &str, new_pull: PullRequest) {
         let mut g = self.pulls.lock().unwrap();
-        if let Some(pull) = g.get(&new_pull.number) {
+        if let Some(pull) = g
+            .entry(full_repo_name.to_string())
+            .or_default()
+            .get(&new_pull.number)
+        {
             if pull.updated_at >= new_pull.updated_at {
                 return;
             }
         }
-        g.insert(new_pull.number, new_pull);
+        g.entry(full_repo_name.to_string())
+            .or_default()
+            .insert(new_pull.number, new_pull);
     }
 
-    pub fn remove(&self, p: &PullRequest) {
-        self.pulls.lock().unwrap().remove(&p.number);
+    pub fn remove(&self, full_repo_name: &str, p: &PullRequest) {
+        if let Some(pulls) = self.pulls.lock().unwrap().get_mut(full_repo_name) {
+            pulls.remove(&p.number);
+        }
     }
 }

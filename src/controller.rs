@@ -178,23 +178,27 @@ impl Controller {
             .collect()
     }
 
-    pub async fn init(&mut self, full_repo_name: &str) -> Result<()> {
+    pub async fn init(&self) -> Result<()> {
         self.github.discover_installations().await?;
-        for p in self.github.pulls(full_repo_name).await? {
-            self.add_pull(p, full_repo_name, false).await?;
+        for i in self.installations() {
+            for r in i.repositories {
+                for p in self.github.pulls(&r.full_name).await? {
+                    self.add_pull(&r.full_name, p, false).await?;
+                }
+            }
         }
         Ok(())
     }
 
-    pub async fn remove_pull(&self, closed_pull: structs::PullRequest) {
-        self.memory.remove(&closed_pull);
+    pub async fn remove_pull(&self, full_repo_name: &str, closed_pull: structs::PullRequest) {
+        self.memory.remove(full_repo_name, &closed_pull);
     }
 
     // TODO: add and remove pulls based on a repository which they are sent against
     pub async fn add_pull(
         &self,
-        mut new_pull: structs::PullRequest,
         full_repo_name: &str,
+        mut new_pull: structs::PullRequest,
         trigger_updates: bool,
     ) -> Result<()> {
         let diff = self
@@ -202,26 +206,24 @@ impl Controller {
             .read_pull_diff(full_repo_name, new_pull.number)
             .await?;
         new_pull.diff = Some(diff);
-        self.memory.insert(new_pull.clone());
+        self.memory.insert(full_repo_name, new_pull.clone());
         if !trigger_updates {
             return Ok(());
         }
 
         let mut pending_updates: HashMap<i32, Vec<Update>> = HashMap::new();
-        for other_pull in self
-            .memory
-            .pulls
-            .lock()
-            .unwrap()
-            .values()
-            .filter(|other| other.number != new_pull.number)
-        {
-            let updates = compare(&new_pull, other_pull);
-            for update in updates {
-                pending_updates
-                    .entry(update.notification_target)
-                    .or_default()
-                    .push(update);
+        if let Some(pulls_map) = self.memory.pulls.lock().unwrap().get(full_repo_name) {
+            for other_pull in pulls_map
+                .values()
+                .filter(|other| other.number != new_pull.number)
+            {
+                let updates = compare(&new_pull, other_pull);
+                for update in updates {
+                    pending_updates
+                        .entry(update.notification_target)
+                        .or_default()
+                        .push(update);
+                }
             }
         }
         self.send_updates(pending_updates, full_repo_name).await?;

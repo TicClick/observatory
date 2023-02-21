@@ -25,8 +25,3 @@ logging:
   # Path to the log file. For logging to STDERR, use -
   file: "-"
   level: info
-
-controller:
-  # The repository to work with (listen to events, post comments, check pulls, etc).
-  # TODO: this setting needs to disappear in favour of a per-repository pull storage.
-  target_repo: "TicClick/osu-wiki"

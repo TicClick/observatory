@@ -98,12 +98,11 @@ pub async fn github_events(mut req: Request) -> viz::Result<()> {
             StatusCode::INTERNAL_SERVER_ERROR.into_error()
         })?;
 
-        // TODO: pass installation ID to obtain the correct token (it's currently hardcoded or something)
         match evt.action.as_str() {
             "synchronize" | "opened" | "reopened" => {
                 let pull_number = evt.pull_request.number;
                 controller
-                    .add_pull(evt.pull_request, &evt.repository.full_name, true)
+                    .add_pull(&evt.repository.full_name, evt.pull_request, true)
                     .await
                     .unwrap_or_else(|e| {
                         log::error!(
@@ -114,13 +113,17 @@ pub async fn github_events(mut req: Request) -> viz::Result<()> {
                     });
             }
             "closed" => {
-                controller.remove_pull(evt.pull_request).await;
+                controller
+                    .remove_pull(&evt.repository.full_name, evt.pull_request)
+                    .await;
             }
             _ => {}
         }
     }
     Ok(())
 }
+
+const DEFAULT_DATA_LIMIT: u64 = 10 * 1024 * 1024; // 10 Mb
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -158,16 +161,15 @@ async fn main() -> Result<()> {
     let webhook_secret = settings.github.webhook_secret;
 
     let validator = RequestValidator::new(webhook_secret);
-    let mut controller = controller::Controller::new(settings.github.app_id, private_key);
-    controller.init(&settings.controller.target_repo).await?;
+    let controller = controller::Controller::new(settings.github.app_id, private_key);
+    controller.init().await?;
     log::info!("Active installations: {:?}", controller.installations());
 
-    // TODO: make this a unified const
     let ls = viz::types::Limits::new()
-        .insert("bytes", 10 * 1024 * 1024)
-        .insert("json", 10 * 1024 * 1024)
-        .insert("payload", 10 * 1024 * 1024)
-        .insert("text", 10 * 1024 * 1024);
+        .insert("bytes", DEFAULT_DATA_LIMIT)
+        .insert("json", DEFAULT_DATA_LIMIT)
+        .insert("payload", DEFAULT_DATA_LIMIT)
+        .insert("text", DEFAULT_DATA_LIMIT);
 
     let app = Router::new()
         .post(&settings.server.events_endpoint, github_events)

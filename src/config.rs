@@ -15,7 +15,6 @@ pub struct Config {
     pub server: Server,
     pub logging: Logging,
     pub github: GitHub,
-    pub controller: Controller,
 }
 
 impl Config {
@@ -46,12 +45,6 @@ pub struct GitHub {
     pub app_id: String,
     pub app_key_path: String,
     pub webhook_secret: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Controller {
-    // TODO: this setting needs to disappear in favour of a per-repository pull storage
-    pub target_repo: String,
 }
 
 // Unfortunate copypaste: https://serde.rs/remote-derive.html
@@ -93,9 +86,6 @@ mod tests {
                 app_id: "123456".to_string(),
                 app_key_path: "./private-key.pem".to_string(),
                 webhook_secret: "iseedeadpeople".to_string(),
-            },
-            controller: Controller {
-                target_repo: "TicClick/osu-wiki".to_string(),
             },
         };
         assert_eq!(settings, template);
