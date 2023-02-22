@@ -241,21 +241,34 @@ impl Client {
 
     pub async fn discover_installations(&self) -> Result<()> {
         if let Ok(installations) = self.installations().await {
-            for mut installation in installations {
-                let token = self.get_installation_token(installation.id).await?;
-                let req = self
-                    .http_client
-                    .get(GitHub::installation_repos())
-                    .bearer_auth(token);
-                let response: structs::InstallationRepositories = __json(req).await?;
-                installation.repositories = response.repositories;
-                self.installations
-                    .lock()
-                    .unwrap()
-                    .insert(installation.id, installation);
+            for installation in installations {
+                self.add_installation(installation).await?;
             }
         }
         Ok(())
+    }
+
+    pub async fn add_installation(&self, mut installation: structs::Installation) -> Result<()> {
+        let token = self.get_installation_token(installation.id).await?;
+        let req = self
+            .http_client
+            .get(GitHub::installation_repos())
+            .bearer_auth(token);
+        let response: structs::InstallationRepositories = __json(req).await?;
+        installation.repositories = response.repositories;
+        self.installations
+            .lock()
+            .unwrap()
+            .insert(installation.id, installation);
+        Ok(())
+    }
+
+    pub fn remove_installation(&self, installation: &structs::Installation) {
+        self.installations.lock().unwrap().remove(&installation.id);
+        self.tokens
+            .lock()
+            .unwrap()
+            .remove(&TokenType::Installation(installation.id));
     }
 
     async fn pick_token(&self, full_repo_name: &str) -> Result<String> {

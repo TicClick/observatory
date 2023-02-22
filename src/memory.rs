@@ -37,4 +37,11 @@ impl Memory {
             pulls.remove(&p.number);
         }
     }
+
+    pub fn drop_repository(&self, full_repo_name: &str) {
+        self.pulls
+            .lock()
+            .unwrap()
+            .remove(&full_repo_name.to_string());
+    }
 }

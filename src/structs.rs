@@ -16,8 +16,8 @@ pub struct Repository {
     pub id: i64,
     pub name: String,
     pub full_name: String,
-    pub fork: bool,
-    pub owner: Actor,
+    pub fork: Option<bool>,   // missing in installation events
+    pub owner: Option<Actor>, // missing in installation events
 }
 
 // https://docs.github.com/en/rest/pulls/pulls
@@ -46,6 +46,15 @@ pub struct PullRequestEvent {
     pub repository: Repository,
     pub installation: InstallationIdWrapper,
     pub sender: Actor,
+}
+
+// https://docs.github.com/webhooks-and-events/webhooks/webhook-events-and-payloads#installation
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InstallationEvent {
+    pub action: String,
+    pub installation: Installation,
+    pub sender: Actor,
+    pub repositories: Vec<Repository>,
 }
 
 // Pull request events only contain installation id

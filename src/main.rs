@@ -10,7 +10,7 @@ use viz::IntoResponse;
 use viz::{types::State, Router, Server, ServiceMaker};
 use viz::{Request, RequestExt, StatusCode};
 
-use observatory::{config, controller, structs};
+use observatory::{config, controller, handler};
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -84,43 +84,16 @@ pub async fn github_events(mut req: Request) -> viz::Result<()> {
         return Err(StatusCode::FORBIDDEN.into_error());
     }
 
-    // TODO: handle installation events (addition/removal)
-
     // TODO: instead of processing requests right here, use std::sync::mspc channels -- this way we won't even need to
     // access the controller from the web server.
-    if event_type == "pull_request" {
-        let controller = req
-            .state::<controller::Controller>()
-            .ok_or_else(|| StatusCode::INTERNAL_SERVER_ERROR.into_error())?;
-
-        let evt: structs::PullRequestEvent = serde_json::from_str(&body).map_err(|e| {
-            log::error!("Failed to deserialize an event coming from GitHub: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR.into_error()
-        })?;
-
-        match evt.action.as_str() {
-            "synchronize" | "opened" | "reopened" => {
-                let pull_number = evt.pull_request.number;
-                controller
-                    .add_pull(&evt.repository.full_name, evt.pull_request, true)
-                    .await
-                    .unwrap_or_else(|e| {
-                        log::error!(
-                            "Failed to update information about pull #{}: {:?}",
-                            pull_number,
-                            e
-                        );
-                    });
-            }
-            "closed" => {
-                controller
-                    .remove_pull(&evt.repository.full_name, evt.pull_request)
-                    .await;
-            }
-            _ => {}
-        }
+    match event_type.as_str() {
+        "pull_request" => handler::pull_request_event(req, body).await,
+        "installation" => handler::installation_event(req, body).await,
+        // TODO: handle "installation_repositories" events, similarly to the above. This is nice to have, but not a necessity,
+        // since we retain installation tokens even if a repository is removed from us.
+        // https://docs.github.com/webhooks-and-events/webhooks/webhook-events-and-payloads#installation_repositories
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 const DEFAULT_DATA_LIMIT: u64 = 10 * 1024 * 1024; // 10 Mb

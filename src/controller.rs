@@ -190,6 +190,23 @@ impl Controller {
         Ok(())
     }
 
+    pub async fn add_installation(&self, installation: structs::Installation) -> Result<()> {
+        self.github.add_installation(installation.clone()).await?;
+        for r in installation.repositories {
+            for p in self.github.pulls(&r.full_name).await? {
+                self.add_pull(&r.full_name, p, false).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn remove_installation(&self, installation: structs::Installation) {
+        self.github.remove_installation(&installation);
+        for r in installation.repositories {
+            self.memory.drop_repository(&r.full_name);
+        }
+    }
+
     pub async fn remove_pull(&self, full_repo_name: &str, closed_pull: structs::PullRequest) {
         self.memory.remove(full_repo_name, &closed_pull);
     }
