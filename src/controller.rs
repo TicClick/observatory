@@ -211,7 +211,6 @@ impl Controller {
         self.memory.remove(full_repo_name, &closed_pull);
     }
 
-    // TODO: add and remove pulls based on a repository which they are sent against
     pub async fn add_pull(
         &self,
         full_repo_name: &str,
