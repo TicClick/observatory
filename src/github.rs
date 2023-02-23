@@ -16,6 +16,9 @@ use crate::structs;
 const GITHUB_API_ROOT: &str = "https://api.github.com";
 const GITHUB_ROOT: &str = "https://github.com";
 
+const RETRIES: i32 = 3;
+const RETRYABLE_ERRORS: [u16; 4] = [429, 500, 502, 503];
+
 pub struct GitHub {}
 impl GitHub {
     pub fn pulls(full_repo_name: &str) -> String {
@@ -109,42 +112,43 @@ fn throw_error<T>(e: reqwest::Error, headers: Option<reqwest::header::HeaderMap>
     Err(e.into())
 }
 
-// TODO: this (as well as __text()) needs to retry certain 4xx requests, as well as 5xx coming from GitHub, which are retryable errors.
 async fn __json<T>(rb: reqwest::RequestBuilder) -> Result<T>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
-    match rb.headers(Client::default_headers()).send().await {
-        Ok(payload) => {
-            let headers = payload.headers().clone();
-            match payload.error_for_status() {
-                Err(e) => throw_error(e, Some(headers)),
-                Ok(res) => match res.json().await {
-                    Ok(t) => Ok(t),
-                    Err(e) => throw_error(e, Some(headers)),
-                },
-            }
-        }
-        Err(e) => throw_error(e, None),
-    }
+    __text(rb)
+        .await
+        .map(|body| Ok(serde_json::from_str(&body)?))?
 }
 
-// This is identical to the above block, and the only reason it exists is because
-// Rust doesn't have template specialization -- for fn<T>, all return values must be of the same type, and .text() breaks this.
 async fn __text(rb: reqwest::RequestBuilder) -> Result<String> {
-    match rb.headers(Client::default_headers()).send().await {
-        Ok(payload) => {
-            let headers = payload.headers().clone();
-            match payload.error_for_status() {
-                Err(e) => throw_error(e, Some(headers)),
-                Ok(res) => match res.text().await {
-                    Ok(t) => Ok(t),
-                    Err(e) => throw_error(e, Some(headers)),
-                },
+    let prepared_request = rb.headers(Client::default_headers());
+    let mut url = None;
+    for attempt in 0..RETRIES {
+        match prepared_request.try_clone().unwrap().send().await {
+            Ok(payload) => {
+                let headers = payload.headers().clone();
+                match payload.error_for_status() {
+                    Err(e) => {
+                        url = Some(e.url().unwrap().clone());
+                        if let Some(status) = e.status() {
+                            if RETRYABLE_ERRORS.contains(&status.as_u16()) && attempt != RETRIES - 1
+                            {
+                                continue;
+                            }
+                        }
+                        return throw_error(e, Some(headers));
+                    }
+                    Ok(res) => match res.text().await {
+                        Ok(t) => return Ok(t),
+                        Err(e) => return throw_error(e, Some(headers)),
+                    },
+                }
             }
+            Err(e) => return throw_error(e, None),
         }
-        Err(e) => throw_error(e, None),
     }
+    eyre::bail!("Exhausted retries for {:?}, giving up", url)
 }
 
 impl Client {
