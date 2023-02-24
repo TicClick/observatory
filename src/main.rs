@@ -72,11 +72,7 @@ pub async fn github_events(mut req: Request) -> viz::Result<()> {
         })?;
     let signature = &signature_header.strip_prefix("sha256=").unwrap();
 
-    // TODO: update viz to v0.4.5 and use .text() instead (https://github.com/viz-rs/viz/issues/67)
-    let raw = req.bytes().await?;
-    let body = String::from_utf8(raw.to_vec())
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_error())?;
-
+    let body = req.text().await?;
     let validator = req
         .state::<RequestValidator>()
         .ok_or_else(|| StatusCode::INTERNAL_SERVER_ERROR.into_error())?;
