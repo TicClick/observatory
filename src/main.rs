@@ -149,7 +149,6 @@ async fn main() -> Result<()> {
         .with(limits::Config::default().limits(ls));
 
     log::info!("Listening on {}/{}", addr, settings.server.events_endpoint);
-    // TODO: this needs to be a systemd module to avoid going down silently for an extended period of time.
     if let Err(err) = Server::bind(&addr).serve(ServiceMaker::from(app)).await {
         log::error!("{:?}", err);
     }

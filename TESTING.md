@@ -1,7 +1,7 @@
 # testing
 
 0. make sure the app can accept requests.
-  - if you have access to a remote host, use the script below to forward traffic to the app run locally.
+  - if you have access to a remote host, save the script below to `dev/tunnel.sh` and use it to forward traffic to the app run locally.
   - otherwise, use something like https://ngrok.com/ which would do that for you.
 1. [register](https://github.com/settings/apps/new) a new GitHub app, then add read/write access to pull requests and issues.
 2. open its GitHub Store page[^1] and install it on a selected repository.

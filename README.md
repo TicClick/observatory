@@ -10,4 +10,4 @@
 
 ## testing
 
-See [`TESTING.md`](TESTING.md).
+see [`TESTING.md`](TESTING.md).
