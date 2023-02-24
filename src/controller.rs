@@ -280,6 +280,9 @@ impl Controller {
                 }
             }
 
+            // TODO: as of now, update replaces the comment, while it should only update its own section
+            // examples: https://github.com/TicClick/osu-wiki/pull/17#issuecomment-1442720836
+            // (see edit history -- it was wiped after https://github.com/TicClick/osu-wiki/pull/18 was posted)
             let comments = self.github.list_comments(full_repo_name, target).await?;
             for c in comments {
                 if self.has_control_over(&c.user) {
