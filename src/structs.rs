@@ -89,8 +89,27 @@ pub struct InstallationRepositories {
     pub repositories: Vec<Repository>,
 }
 
-// https://docs.github.com/en/rest/issues/comments#create-an-issue-comment
+// https://docs.github.com/en/rest/issues/comments#list-issue-comments
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IssueComment {
+    pub id: i64,
     pub body: String,
+    pub user: Actor,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+// https://docs.github.com/en/rest/issues/comments#create-an-issue-comment
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PostIssueComment {
+    pub body: String,
+}
+
+// https://docs.github.com/en/rest/apps/apps#get-the-authenticated-app
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct App {
+    pub id: i64,
+    pub slug: String,
+    pub owner: Actor,
+    pub name: String,
 }

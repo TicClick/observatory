@@ -156,6 +156,7 @@ fn compare(new_pull: &structs::PullRequest, other_pull: &structs::PullRequest) -
 
 #[derive(Debug, Clone)]
 pub struct Controller {
+    pub app: Option<structs::App>,
     github: github::Client,
     memory: memory::Memory,
 }
@@ -163,6 +164,7 @@ pub struct Controller {
 impl Controller {
     pub fn new(app_id: String, private_key: String) -> Self {
         Self {
+            app: None,
             github: github::Client::new(app_id, private_key),
             memory: memory::Memory::new(),
         }
@@ -178,7 +180,8 @@ impl Controller {
             .collect()
     }
 
-    pub async fn init(&self) -> Result<()> {
+    pub async fn init(&mut self) -> Result<()> {
+        self.app = Some(self.github.app().await?);
         self.github.discover_installations().await?;
         for i in self.installations() {
             for r in i.repositories {
@@ -246,14 +249,12 @@ impl Controller {
         Ok(())
     }
 
-    // TODO: this function posts a new comment every time anything changes in pull requests, which is terrible.
-    // Instead, it should update its existing comment, and maybe add an empty checkbox to the PR owner's post, and reset it on every update.
     pub async fn send_updates(
         &self,
         pending: HashMap<i32, Vec<Update>>,
         full_repo_name: &str,
     ) -> Result<()> {
-        for (target, mut updates) in pending.into_iter() {
+        'pulls: for (target, mut updates) in pending.into_iter() {
             updates.sort();
             let mut lines = Vec::new();
             let mut intros = make_hints();
@@ -270,17 +271,37 @@ impl Controller {
                     lines.push(format!("- {} (>10 files)", u.reference_url));
                 } else {
                     lines.push(format!("- {}, files:", u.reference_url));
+                    let indent = "  ";
+                    lines.push(format!("{indent}```"));
                     for file in u.file_set {
-                        lines.push(format!("  - {}", file));
+                        lines.push(format!("{indent}{file}"));
                     }
+                    lines.push(format!("{indent}```"));
                 }
             }
 
+            let comments = self.github.list_comments(full_repo_name, target).await?;
+            for c in comments {
+                if self.has_control_over(&c.user) {
+                    self.github
+                        .update_comment(full_repo_name, c.id, lines.join("\n"))
+                        .await?;
+                    continue 'pulls;
+                }
+            }
             self.github
                 .post_comment(full_repo_name, target, lines.join("\n"))
                 .await?;
         }
         Ok(())
+    }
+
+    fn has_control_over(&self, user: &structs::Actor) -> bool {
+        if let Some(app) = &self.app {
+            user.login == format!("{}[bot]", &app.slug)
+        } else {
+            false
+        }
     }
 }
 

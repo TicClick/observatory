@@ -24,6 +24,9 @@ impl GitHub {
     pub fn pulls(full_repo_name: &str) -> String {
         format!("{GITHUB_API_ROOT}/repos/{full_repo_name}/pulls")
     }
+    pub fn app() -> String {
+        format!("{GITHUB_API_ROOT}/app")
+    }
     pub fn app_installations() -> String {
         format!("{GITHUB_API_ROOT}/app/installations")
     }
@@ -35,6 +38,9 @@ impl GitHub {
     }
     pub fn comments(full_repo_name: &str, issue_number: i32) -> String {
         format!("{GITHUB_API_ROOT}/repos/{full_repo_name}/issues/{issue_number}/comments")
+    }
+    pub fn issue_comment(full_repo_name: &str, comment_id: i64) -> String {
+        format!("{GITHUB_API_ROOT}/repos/{full_repo_name}/issues/comments/{comment_id}")
     }
     pub fn diff_url(full_repo_name: &str, pull_number: i32) -> String {
         // Diff links are handled by github.com, not the API subdomain.
@@ -235,11 +241,8 @@ impl Client {
         let pp = self
             .http_client
             .get(GitHub::app_installations())
-            .bearer_auth(self.get_jwt_token().await)
-            .headers(Self::default_headers())
-            .send();
-        let body = pp.await.unwrap();
-        let items: Vec<structs::Installation> = body.json().await?;
+            .bearer_auth(self.get_jwt_token().await);
+        let items: Vec<structs::Installation> = __json(pp).await?;
         Ok(items)
     }
 
@@ -250,6 +253,15 @@ impl Client {
             }
         }
         Ok(())
+    }
+
+    pub async fn app(&self) -> Result<structs::App> {
+        let pp = self
+            .http_client
+            .get(GitHub::app())
+            .bearer_auth(self.get_jwt_token().await);
+        let app: structs::App = __json(pp).await?;
+        Ok(app)
     }
 
     pub async fn add_installation(&self, mut installation: structs::Installation) -> Result<()> {
@@ -317,17 +329,56 @@ impl Client {
         &self,
         full_repo_name: &str,
         issue_number: i32,
-        comment: String,
+        body: String,
     ) -> Result<()> {
-        let comment = serde_json::to_string(&structs::IssueComment { body: comment }).unwrap();
+        let comment = serde_json::to_string(&structs::PostIssueComment { body }).unwrap();
         let token = self.pick_token(full_repo_name).await?;
         let req = self
             .http_client
             .post(GitHub::comments(full_repo_name, issue_number))
             .body(comment)
             .bearer_auth(token);
-        __json(req).await?;
+        __json::<structs::IssueComment>(req).await?;
         Ok(())
+    }
+
+    pub async fn update_comment(
+        &self,
+        full_repo_name: &str,
+        comment_id: i64,
+        body: String,
+    ) -> Result<()> {
+        let comment = serde_json::to_string(&structs::PostIssueComment { body }).unwrap();
+        let token = self.pick_token(full_repo_name).await?;
+        let req = self
+            .http_client
+            .patch(GitHub::issue_comment(full_repo_name, comment_id))
+            .body(comment)
+            .bearer_auth(token);
+        __json::<structs::IssueComment>(req).await?;
+        Ok(())
+    }
+
+    pub async fn list_comments(
+        &self,
+        full_repo_name: &str,
+        issue_number: i32,
+    ) -> Result<Vec<structs::IssueComment>> {
+        let mut out = Vec::new();
+        let token = self.pick_token(full_repo_name).await?;
+        for page in 1..100 {
+            let req = self
+                .http_client
+                .get(GitHub::comments(full_repo_name, issue_number))
+                .query(&[("per_page", "100"), ("page", &page.to_string())])
+                .bearer_auth(token.clone());
+            let mut response: Vec<structs::IssueComment> = __json(req).await?;
+            if response.is_empty() {
+                break;
+            }
+            out.append(&mut response);
+        }
+        Ok(out)
     }
 
     pub async fn read_pull_diff(

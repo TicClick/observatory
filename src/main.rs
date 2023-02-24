@@ -134,9 +134,10 @@ async fn main() -> Result<()> {
     let webhook_secret = settings.github.webhook_secret;
 
     let validator = RequestValidator::new(webhook_secret);
-    let controller = controller::Controller::new(settings.github.app_id, private_key);
+    let mut controller = controller::Controller::new(settings.github.app_id, private_key);
     controller.init().await?;
     log::info!("Active installations: {:?}", controller.installations());
+    log::info!("Self (GitHub App): {:?}", controller.app);
 
     let ls = viz::types::Limits::new()
         .insert("bytes", DEFAULT_DATA_LIMIT)
