@@ -41,7 +41,6 @@ pub struct PullRequest {
 pub struct PullRequestEvent {
     pub action: String,
     pub number: i32,
-    pub organization: Actor,
     pub pull_request: PullRequest,
     pub repository: Repository,
     pub installation: InstallationIdWrapper,
