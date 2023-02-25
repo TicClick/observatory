@@ -79,7 +79,7 @@ mod tests {
                 events_endpoint: "github-events".to_string(),
             },
             logging: Logging {
-                level: log::LevelFilter::Info,
+                level: log::LevelFilter::Debug,
                 file: STDERR_LOG_FILE.to_string(),
             },
             github: GitHub {
