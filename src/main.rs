@@ -133,7 +133,7 @@ async fn main() -> Result<()> {
     let mut controller = controller::Controller::new(settings.github.app_id, private_key);
     controller.init().await?;
     log::info!("Active installations: {:?}", controller.installations());
-    log::info!("Self (GitHub App): {:?}", controller.app);
+    log::debug!("GitHub App: {:?}", controller.app);
 
     let ls = viz::types::Limits::new()
         .insert("bytes", DEFAULT_DATA_LIMIT)

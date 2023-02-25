@@ -85,9 +85,9 @@ impl Controller {
     }
 
     /// Purge a pull request from memory, excluding it from conflict detection.
-    /// 
+    ///
     /// This should be done only when a pull request is closed or merged.
-    pub async fn remove_pull(&self, full_repo_name: &str, closed_pull: structs::PullRequest) {
+    pub fn remove_pull(&self, full_repo_name: &str, closed_pull: structs::PullRequest) {
         self.memory.remove(full_repo_name, &closed_pull);
     }
 
@@ -162,13 +162,32 @@ impl Controller {
                 u.file_set.sort();
                 let key = (u.reference_target, u.kind.clone());
                 if let Some(existing_comment) = pull_references.get(&key) {
-                    self.github
+                    if let Err(e) = self
+                        .github
                         .update_comment(full_repo_name, existing_comment.id, u.to_markdown())
-                        .await?;
-                } else {
-                    self.github
-                        .post_comment(full_repo_name, target, u.to_markdown())
-                        .await?;
+                        .await
+                    {
+                        log::error!(
+                            "Failed to update comment #{} in pull request {}/#{} (about #{}): {:?}",
+                            existing_comment.id,
+                            full_repo_name,
+                            key.0,
+                            target,
+                            e
+                        );
+                    }
+                } else if let Err(e) = self
+                    .github
+                    .post_comment(full_repo_name, target, u.to_markdown())
+                    .await
+                {
+                    log::error!(
+                        "Failed to post a NEW comment in pull request {}/#{} (about #{}): {:?}",
+                        full_repo_name,
+                        key.0,
+                        target,
+                        e
+                    );
                 }
             }
         }

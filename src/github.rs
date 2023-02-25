@@ -105,19 +105,6 @@ impl Claims {
     }
 }
 
-fn throw_error<T>(e: reqwest::Error, headers: Option<reqwest::header::HeaderMap>) -> Result<T> {
-    log::error!(
-        "Error at {}: HTTP {:?}: {:?}",
-        e.url().unwrap(),
-        e.status(),
-        e
-    );
-    if let Some(headers) = headers {
-        log::error!("Headers: {:?}", headers);
-    }
-    Err(e.into())
-}
-
 async fn __json<T>(rb: reqwest::RequestBuilder) -> Result<T>
 where
     T: for<'de> serde::Deserialize<'de>,
@@ -127,31 +114,81 @@ where
         .map(|body| Ok(serde_json::from_str(&body)?))?
 }
 
+const INTERESTING_HEADERS: [&str; 7] = [
+    "etag",
+    "x-ratelimit-limit",
+    "x-ratelimit-remaining",
+    "x-ratelimit-reset",
+    "x-ratelimit-used",
+    "x-ratelimit-resource",
+    "x-github-request-id",
+];
+
 async fn __text(rb: reqwest::RequestBuilder) -> Result<String> {
     let prepared_request = rb.headers(Client::default_headers());
-    let mut url = None;
+    let mut url: Option<reqwest::Url> = None;
     for attempt in 0..RETRIES {
         match prepared_request.try_clone().unwrap().send().await {
-            Ok(payload) => {
-                let headers = payload.headers().clone();
-                match payload.error_for_status() {
-                    Err(e) => {
-                        url = Some(e.url().unwrap().clone());
-                        if let Some(status) = e.status() {
-                            if RETRYABLE_ERRORS.contains(&status.as_u16()) && attempt != RETRIES - 1
-                            {
-                                continue;
-                            }
-                        }
-                        return throw_error(e, Some(headers));
+            Ok(response) => {
+                // Yes, you have to deconstruct the response by itself if you step from the trodden path
+                // (access URL and body, and do status checks at the same time).
+                // https://github.com/seanmonstar/reqwest/issues/1542
+                let headers: HashMap<String, String> = response
+                    .headers()
+                    .iter()
+                    .map(|(k, v)| {
+                        (
+                            k.to_string().to_lowercase(),
+                            v.to_str().unwrap_or("<none>").to_owned(),
+                        )
+                    })
+                    .filter(|(k, _)| INTERESTING_HEADERS.contains(&k.as_str()))
+                    .collect();
+                let status = response.status();
+                url = Some(response.url().clone());
+                let body = response.text().await;
+
+                let logging_string = format!(
+                    "({}/{}) {} -> HTTP {:?}",
+                    attempt + 1,
+                    RETRIES,
+                    url.as_ref().unwrap(),
+                    status
+                );
+                if status.is_client_error() || status.is_server_error() || body.is_err() {
+                    let can_be_retried = RETRYABLE_ERRORS.contains(&status.as_u16());
+                    let log_level = if can_be_retried && attempt < RETRIES - 1 {
+                        log::Level::Warn
+                    } else {
+                        log::Level::Error
+                    };
+                    log::log!(
+                        log_level,
+                        "{} + headers: {:?} + body: {:?}",
+                        logging_string,
+                        headers,
+                        body
+                    );
+
+                    // This will correctly end the retry loop if attempt == RETRIES - 1
+                    if can_be_retried {
+                        continue;
                     }
-                    Ok(res) => match res.text().await {
-                        Ok(t) => return Ok(t),
-                        Err(e) => return throw_error(e, Some(headers)),
-                    },
+                    eyre::bail!(logging_string);
                 }
+
+                log::debug!("{} + headers: {:?}", logging_string, headers);
+                return Ok(body.unwrap());
             }
-            Err(e) => return throw_error(e, None),
+            Err(e) => {
+                log::error!(
+                    "Error at {}: HTTP {:?}: {:?}",
+                    e.url().unwrap(),
+                    e.status(),
+                    e
+                );
+                return Err(e.into());
+            }
         }
     }
     eyre::bail!("Exhausted retries for {:?}, giving up", url)
@@ -265,18 +302,36 @@ impl Client {
     }
 
     pub async fn add_installation(&self, mut installation: structs::Installation) -> Result<()> {
-        let token = self.get_installation_token(installation.id).await?;
-        let req = self
-            .http_client
-            .get(GitHub::installation_repos())
-            .bearer_auth(token);
-        let response: structs::InstallationRepositories = __json(req).await?;
-        installation.repositories = response.repositories;
-        self.installations
-            .lock()
-            .unwrap()
-            .insert(installation.id, installation);
-        Ok(())
+        match self.get_installation_token(installation.id).await {
+            Err(e) => {
+                log::error!(
+                    "Failed to get token for installation {}: {:?}",
+                    installation.id,
+                    e
+                );
+                Err(e)
+            }
+            Ok(token) => {
+                let req = self
+                    .http_client
+                    .get(GitHub::installation_repos())
+                    .bearer_auth(token);
+                match __json::<structs::InstallationRepositories>(req).await {
+                    Err(e) => {
+                        log::error!("Failed to fetch list of repositories for a fresh installation {}: {:?}", installation.id, e);
+                        Err(e)
+                    }
+                    Ok(response) => {
+                        installation.repositories = response.repositories;
+                        self.installations
+                            .lock()
+                            .unwrap()
+                            .insert(installation.id, installation);
+                        Ok(())
+                    }
+                }
+            }
+        }
     }
 
     pub fn remove_installation(&self, installation: &structs::Installation) {

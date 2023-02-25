@@ -24,4 +24,4 @@ github:
 logging:
   # Path to the log file. For logging to STDERR, use -
   file: "-"
-  level: info
+  level: debug

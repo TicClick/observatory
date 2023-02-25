@@ -69,7 +69,7 @@ impl ToMarkdown for CommentHeader {
         format!(
             "{}\n{}\n{}",
             HTML_COMMENT_START,
-            serde_yaml::to_string(&self).unwrap(),
+            serde_yaml::to_string(&self).unwrap().trim(),
             HTML_COMMENT_END
         )
     }

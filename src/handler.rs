@@ -9,28 +9,31 @@ pub async fn pull_request_event(req: Request, body: String) -> viz::Result<()> {
         .ok_or_else(|| StatusCode::INTERNAL_SERVER_ERROR.into_error())?;
 
     let evt: structs::PullRequestEvent = serde_json::from_str(&body).map_err(|e| {
-        log::error!("Failed to deserialize an event coming from GitHub: {:?}", e);
+        log::error!(
+            "Failed to deserialize a pull request event coming from GitHub: {:?}. JSON: {:?}",
+            e,
+            body
+        );
         StatusCode::INTERNAL_SERVER_ERROR.into_error()
     })?;
 
+    let pull_number = evt.pull_request.number;
+    log::debug!("Pull #{}: received event \"{}\"", pull_number, evt.action);
     match evt.action.as_str() {
         "synchronize" | "opened" | "reopened" => {
-            let pull_number = evt.pull_request.number;
             controller
                 .add_pull(&evt.repository.full_name, evt.pull_request, true)
                 .await
                 .unwrap_or_else(|e| {
                     log::error!(
-                        "Failed to update information about pull #{}: {:?}",
+                        "Pull #{}: failed to update information and trigger comments: {:?}",
                         pull_number,
                         e
                     );
                 });
         }
         "closed" => {
-            controller
-                .remove_pull(&evt.repository.full_name, evt.pull_request)
-                .await;
+            controller.remove_pull(&evt.repository.full_name, evt.pull_request);
         }
         _ => {}
     }
@@ -43,10 +46,16 @@ pub async fn installation_event(req: Request, body: String) -> viz::Result<()> {
         .ok_or_else(|| StatusCode::INTERNAL_SERVER_ERROR.into_error())?;
 
     let evt: structs::InstallationEvent = serde_json::from_str(&body).map_err(|e| {
-        log::error!("Failed to deserialize an event coming from GitHub: {:?}", e);
+        log::error!("Failed to deserialize an installation request event coming from GitHub: {:?}. JSON: {:?}", e, body);
         StatusCode::INTERNAL_SERVER_ERROR.into_error()
     })?;
 
+    let installation_id = evt.installation.id;
+    log::debug!(
+        "Installation #{}: received event \"{}\"",
+        installation_id,
+        evt.action
+    );
     match evt.action.as_str() {
         "created" => {
             controller
@@ -54,7 +63,8 @@ pub async fn installation_event(req: Request, body: String) -> viz::Result<()> {
                 .await
                 .unwrap_or_else(|e| {
                     log::error!(
-                        "Failed to add an installation (owner: {}, repositories: {:?}): {:?}",
+                        "Installation #{}: addition failed (owner: {}, repositories: {:?}): {:?}",
+                        installation_id,
                         evt.sender.login,
                         evt.repositories
                             .iter()
