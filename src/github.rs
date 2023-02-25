@@ -149,11 +149,11 @@ async fn __text(rb: reqwest::RequestBuilder) -> Result<String> {
                 let body = response.text().await;
 
                 let logging_string = format!(
-                    "({}/{}) {} -> HTTP {:?}",
+                    "HTTP {} {} ({}/{})",
+                    status,
+                    url.as_ref().unwrap(),
                     attempt + 1,
                     RETRIES,
-                    url.as_ref().unwrap(),
-                    status
                 );
                 if status.is_client_error() || status.is_server_error() || body.is_err() {
                     let can_be_retried = RETRYABLE_ERRORS.contains(&status.as_u16());
@@ -164,7 +164,7 @@ async fn __text(rb: reqwest::RequestBuilder) -> Result<String> {
                     };
                     log::log!(
                         log_level,
-                        "{} + headers: {:?} + body: {:?}",
+                        "{}. Headers: {:?} + body: {:?}",
                         logging_string,
                         headers,
                         body
@@ -177,7 +177,7 @@ async fn __text(rb: reqwest::RequestBuilder) -> Result<String> {
                     eyre::bail!(logging_string);
                 }
 
-                log::debug!("{} + headers: {:?}", logging_string, headers);
+                log::debug!("{}. Headers: {:?}", logging_string, headers);
                 return Ok(body.unwrap());
             }
             Err(e) => {
