@@ -83,6 +83,7 @@ impl ToMarkdown for Conflict {
         };
         let mut lines = Vec::new();
         lines.push(header.to_markdown());
+        lines.push(self.kind.to_markdown());
 
         if self.file_set.len() > 10 {
             lines.push(format!("- {} (>10 files)", self.reference_url));
