@@ -64,7 +64,7 @@ pub struct Token {
 
 impl Token {
     pub fn expired(&self) -> bool {
-        chrono::Utc::now() < self.expires_at
+        chrono::Utc::now() >= self.expires_at
     }
 }
 
