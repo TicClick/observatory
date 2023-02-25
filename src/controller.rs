@@ -1,163 +1,31 @@
-// TODO: document members of the module where it makes sense
-
-use std::cmp::{PartialEq, PartialOrd};
+/// `controller` contains core logic of the app. Refer to [`Controller`] for more details.
 use std::collections::HashMap;
 
 use eyre::Result;
 
+use crate::helpers::comments::{CommentHeader, ToMarkdown};
+use crate::helpers::pulls::{self, ConflictType};
+use crate::structs::IssueComment;
 use crate::{github, memory, structs};
 
-const EXISTING_CHANGE_TEMPLATE: &str = "## Possible conflicts\n
-Someone else has edited same files as you did. Please check their changes in case they conflict with yours:\n";
-
-const NEW_ORIGINAL_CHANGE_TEMPLATE: &str = "## New changes\n
-There are new changes in the articles you have translated. Please update your translation after they are merged:\n";
-
-const EXISTING_ORIGINAL_CHANGE_TEMPLATE: &str = "## Existing changes\n
-There are existing unapplied changes in the articles you have translated. Please update your translation after they are merged:\n";
-
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub enum UpdateKind {
-    /// Two pull requests have common file(s).
-    ExistingChange,
-    /// A new pull request affects an article for which there's a translation open.
-    NewOriginalChange,
-    /// There is a new translation of the article that has a pending change.
-    ExistingOriginalChange,
-}
-
-fn make_hints() -> HashMap<UpdateKind, String> {
-    let mut out = HashMap::new();
-    out.insert(
-        UpdateKind::ExistingChange,
-        String::from(EXISTING_CHANGE_TEMPLATE),
-    );
-    out.insert(
-        UpdateKind::NewOriginalChange,
-        String::from(NEW_ORIGINAL_CHANGE_TEMPLATE),
-    );
-    out.insert(
-        UpdateKind::ExistingOriginalChange,
-        String::from(EXISTING_ORIGINAL_CHANGE_TEMPLATE),
-    );
-    out
-}
-
-#[derive(Debug, Ord, Eq, PartialEq, PartialOrd)]
-pub struct Update {
-    pub kind: UpdateKind,
-    pub notification_target: i32,
-    pub reference_target: i32,
-    pub reference_url: String,
-    pub file_set: Vec<String>,
-}
-
-pub struct Article {
-    pub path: String,
-    pub language: String,
-}
-
-impl Article {
-    pub fn from_file_path(s: &str) -> Self {
-        let fp = std::path::Path::new(s);
-        let language = fp.file_stem().unwrap().to_str().unwrap().to_owned();
-        let path = fp.parent().unwrap().to_str().unwrap().to_owned();
-        Self { path, language }
-    }
-
-    pub fn file_path(&self) -> String {
-        format!("{}/{}.md", self.path, self.language)
-    }
-
-    pub fn is_original(&self) -> bool {
-        self.language == "en"
-    }
-
-    pub fn is_translation(&self) -> bool {
-        !self.is_original()
-    }
-}
-
-impl std::cmp::PartialEq for Article {
-    fn eq(&self, other: &Self) -> bool {
-        self.path == other.path && self.language == other.language
-    }
-}
-
-fn compare(new_pull: &structs::PullRequest, other_pull: &structs::PullRequest) -> Vec<Update> {
-    let new_diff = new_pull.diff.as_ref().unwrap();
-    let other_diff = other_pull.diff.as_ref().unwrap();
-
-    let mut overlaps = Vec::new();
-    let mut originals = Vec::new();
-    let mut translations = Vec::new();
-
-    for incoming in new_diff
-        .files()
-        .iter()
-        .filter(|fp| fp.target_file.ends_with(".md"))
-    {
-        for other in other_diff
-            .files()
-            .iter()
-            .filter(|fp| fp.target_file.ends_with(".md"))
-        {
-            let new_article = Article::from_file_path(&incoming.path());
-            let other_article = Article::from_file_path(&other.path());
-
-            // Different folders.
-            if new_article.path != other_article.path {
-                continue;
-            }
-
-            if new_article == other_article {
-                overlaps.push(new_article.file_path());
-                continue;
-            }
-
-            if new_article.is_original() && other_article.is_translation() {
-                originals.push(new_article.file_path());
-            } else if new_article.is_translation() && other_article.is_original() {
-                translations.push(new_article.file_path());
-            }
-        }
-    }
-
-    let mut out = Vec::new();
-    if !overlaps.is_empty() {
-        out.push(Update {
-            kind: UpdateKind::ExistingChange,
-            notification_target: new_pull.number,
-            reference_target: other_pull.number,
-            reference_url: other_pull.html_url.clone(),
-            file_set: overlaps,
-        });
-    }
-    if !originals.is_empty() {
-        out.push(Update {
-            kind: UpdateKind::NewOriginalChange,
-            notification_target: other_pull.number,
-            reference_target: new_pull.number,
-            reference_url: new_pull.html_url.clone(),
-            file_set: originals,
-        })
-    }
-    if !translations.is_empty() {
-        out.push(Update {
-            kind: UpdateKind::ExistingOriginalChange,
-            notification_target: new_pull.number,
-            reference_target: other_pull.number,
-            reference_url: other_pull.html_url.clone(),
-            file_set: translations,
-        })
-    }
-    out
-}
-
+/// Controller is a representation of a GitHub App, which contains a per-repository cache of
+/// pull requests and corresponding `.diff` files.
+///
+/// The controller handles pull request updates and maintains the cache accordingly. After initialization,
+/// it is only aware of available repositories and current state of pull requests -- updates need to be passed by the controller owner.
+///
+// The controller checks incoming updates against memory and attempts to determine whether there are conflicts on article levels.
+/// (for details, see [`ConflictType`]). After that, it leaves comments on the pull request which depends on the changes; typically, that is
+/// a translation, whose owner needs to be made aware of changes they may be missing.
 #[derive(Debug, Clone)]
 pub struct Controller {
+    /// Information about a GitHub app (used to detect own comments).
     pub app: Option<structs::App>,
+
+    /// GitHub API client -- see [`github::Client`] for details.
     github: github::Client,
+
+    /// The cache with pull requests and their diffs.
     memory: memory::Memory,
 }
 
@@ -170,6 +38,8 @@ impl Controller {
         }
     }
 
+    /// Fetch a list of installations. Installations generally correspond to GitHub repositories,
+    /// for which the controller will receive updates.
     pub fn installations(&self) -> Vec<structs::Installation> {
         self.github
             .installations
@@ -180,6 +50,8 @@ impl Controller {
             .collect()
     }
 
+    /// Build the in-memory pull request cache on start-up. This will consume a lot of GitHub API quota,
+    /// but fighting a stale database cache is left as an exercise for another day.
     pub async fn init(&mut self) -> Result<()> {
         self.app = Some(self.github.app().await?);
         self.github.discover_installations().await?;
@@ -193,6 +65,7 @@ impl Controller {
         Ok(())
     }
 
+    /// Add an installation and fetch pull requests (one installation may have several repos).
     pub async fn add_installation(&self, installation: structs::Installation) -> Result<()> {
         self.github.add_installation(installation.clone()).await?;
         for r in installation.repositories {
@@ -203,6 +76,7 @@ impl Controller {
         Ok(())
     }
 
+    /// Remove an installation from cache and forget about its pull requests.
     pub fn remove_installation(&self, installation: structs::Installation) {
         self.github.remove_installation(&installation);
         for r in installation.repositories {
@@ -210,10 +84,18 @@ impl Controller {
         }
     }
 
+    /// Purge a pull request from memory, excluding it from conflict detection.
+    /// 
+    /// This should be done only when a pull request is closed or merged.
     pub async fn remove_pull(&self, full_repo_name: &str, closed_pull: structs::PullRequest) {
         self.memory.remove(full_repo_name, &closed_pull);
     }
 
+    /// Handle pull request changes. This includes fetching a `.diff` file from another GitHub domain,
+    /// which may have its own rate limits.
+    ///
+    /// If `trigger_updates` is set, check if the update conflicts with existing pull requests,
+    /// and make its author aware (or other PRs' owners, in rare cases).
     pub async fn add_pull(
         &self,
         full_repo_name: &str,
@@ -230,13 +112,13 @@ impl Controller {
             return Ok(());
         }
 
-        let mut pending_updates: HashMap<i32, Vec<Update>> = HashMap::new();
+        let mut pending_updates: HashMap<i32, Vec<pulls::Conflict>> = HashMap::new();
         if let Some(pulls_map) = self.memory.pulls.lock().unwrap().get(full_repo_name) {
             for other_pull in pulls_map
                 .values()
                 .filter(|other| other.number != new_pull.number)
             {
-                let updates = compare(&new_pull, other_pull);
+                let updates = pulls::compare_pulls(&new_pull, other_pull);
                 for update in updates {
                     pending_updates
                         .entry(update.notification_target)
@@ -249,56 +131,53 @@ impl Controller {
         Ok(())
     }
 
+    /// Notify pull request authors about conflicts by sending a comment for every
+    /// `(conflict source, conflict type)` combination.
+    ///
+    /// Every comment contains a machine-readable YAML header, hidden between separate HTML comment tags.
+    /// The header is a reliable alternative to parsing everything from comments (provided no one tampers with them).
+    ///
+    /// Comments already left by the bot are reused for updates, both to avoid spam and make notification process easier.
     pub async fn send_updates(
         &self,
-        pending: HashMap<i32, Vec<Update>>,
+        pending: HashMap<i32, Vec<pulls::Conflict>>,
         full_repo_name: &str,
     ) -> Result<()> {
-        'pulls: for (target, mut updates) in pending.into_iter() {
-            updates.sort();
-            let mut lines = Vec::new();
-            let mut intros = make_hints();
+        for (target, mut updates) in pending.into_iter() {
+            let existing_comments = self
+                .github
+                .list_comments(full_repo_name, target)
+                .await?
+                .into_iter()
+                .filter(|c| self.has_control_over(&c.user));
+            let mut pull_references: HashMap<(i32, ConflictType), IssueComment> = HashMap::new();
+            for c in existing_comments {
+                if let Some(header) = CommentHeader::from_comment(&c.body) {
+                    pull_references.insert((header.pull_number, header.conflict_type), c);
+                }
+            }
 
+            updates.sort();
             for mut u in updates {
                 u.file_set.sort();
-                if let Some(intro) = intros.remove(&u.kind) {
-                    if !lines.is_empty() {
-                        lines.push(String::new());
-                    }
-                    lines.push(intro);
-                }
-                if u.file_set.len() > 10 {
-                    lines.push(format!("- {} (>10 files)", u.reference_url));
-                } else {
-                    lines.push(format!("- {}, files:", u.reference_url));
-                    let indent = "  ";
-                    lines.push(format!("{indent}```"));
-                    for file in u.file_set {
-                        lines.push(format!("{indent}{file}"));
-                    }
-                    lines.push(format!("{indent}```"));
-                }
-            }
-
-            // TODO: as of now, update replaces the comment, while it should only update its own section
-            // examples: https://github.com/TicClick/osu-wiki/pull/17#issuecomment-1442720836
-            // (see edit history -- it was wiped after https://github.com/TicClick/osu-wiki/pull/18 was posted)
-            let comments = self.github.list_comments(full_repo_name, target).await?;
-            for c in comments {
-                if self.has_control_over(&c.user) {
+                let key = (u.reference_target, u.kind.clone());
+                if let Some(existing_comment) = pull_references.get(&key) {
                     self.github
-                        .update_comment(full_repo_name, c.id, lines.join("\n"))
+                        .update_comment(full_repo_name, existing_comment.id, u.to_markdown())
                         .await?;
-                    continue 'pulls;
+                } else {
+                    self.github
+                        .post_comment(full_repo_name, target, u.to_markdown())
+                        .await?;
                 }
             }
-            self.github
-                .post_comment(full_repo_name, target, lines.join("\n"))
-                .await?;
         }
         Ok(())
     }
 
+    /// A helper for checking if the comment is made by the bot itself.
+    ///
+    /// Curiously, there is no way of telling this from the comment's JSON.
     fn has_control_over(&self, user: &structs::Actor) -> bool {
         if let Some(app) = &self.app {
             user.login == format!("{}[bot]", &app.slug)
