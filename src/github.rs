@@ -359,6 +359,8 @@ impl Client {
     pub async fn pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>> {
         let mut out = Vec::new();
         let token = self.pick_token(full_repo_name).await?;
+        let per_page = 100;
+
         for page in 1..100 {
             let req = self
                 .http_client
@@ -367,15 +369,16 @@ impl Client {
                     ("state", "open"),
                     ("direction", "asc"),
                     ("sort", "created"),
-                    ("per_page", "100"),
+                    ("per_page", &per_page.to_string()),
                     ("page", &page.to_string()),
                 ])
                 .bearer_auth(token.clone());
             let mut response: Vec<structs::PullRequest> = __json(req).await?;
-            if response.is_empty() {
+            let is_last_page = response.len() < per_page;
+            out.append(&mut response);
+            if is_last_page {
                 break;
             }
-            out.append(&mut response);
         }
         Ok(out)
     }
@@ -421,17 +424,23 @@ impl Client {
     ) -> Result<Vec<structs::IssueComment>> {
         let mut out = Vec::new();
         let token = self.pick_token(full_repo_name).await?;
+        let per_page = 100;
+
         for page in 1..100 {
             let req = self
                 .http_client
                 .get(GitHub::comments(full_repo_name, issue_number))
-                .query(&[("per_page", "100"), ("page", &page.to_string())])
+                .query(&[
+                    ("per_page", &per_page.to_string()),
+                    ("page", &page.to_string()),
+                ])
                 .bearer_auth(token.clone());
             let mut response: Vec<structs::IssueComment> = __json(req).await?;
-            if response.is_empty() {
+            let is_last_page = response.len() < per_page;
+            out.append(&mut response);
+            if is_last_page {
                 break;
             }
-            out.append(&mut response);
         }
         Ok(out)
     }
