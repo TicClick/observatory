@@ -143,7 +143,7 @@ impl Controller {
         pending: HashMap<i32, Vec<pulls::Conflict>>,
         full_repo_name: &str,
     ) -> Result<()> {
-        for (target, mut updates) in pending.into_iter() {
+        for (target, updates) in pending.into_iter() {
             let existing_comments = self
                 .github
                 .list_comments(full_repo_name, target)
@@ -157,9 +157,7 @@ impl Controller {
                 }
             }
 
-            updates.sort();
-            for mut u in updates {
-                u.file_set.sort();
+            for u in updates {
                 let key = (u.reference_target, u.kind.clone());
                 if let Some(existing_comment) = pull_references.get(&key) {
                     if let Err(e) = self

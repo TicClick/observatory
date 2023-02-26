@@ -117,6 +117,10 @@ pub fn compare_pulls(
         }
     }
 
+    overlaps.sort();
+    originals.sort();
+    translations.sort();
+
     let mut out = Vec::new();
     if !overlaps.is_empty() {
         out.push(Conflict {
@@ -145,5 +149,6 @@ pub fn compare_pulls(
             file_set: translations,
         })
     }
+    out.sort();
     out
 }
