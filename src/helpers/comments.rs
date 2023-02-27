@@ -40,7 +40,7 @@ pub struct CommentHeader {
 impl CommentHeader {
     /// Attempt to extract the header from a Markdown comment.
     /// The header is expected to look like this, with HTML comment tags on separate lines:
-    /// ```
+    /// ```ignore
     /// <!--
     ///   key1: value1
     ///   key2: value2
