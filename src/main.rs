@@ -10,7 +10,7 @@ use viz::IntoResponse;
 use viz::{types::State, Router, Server, ServiceMaker};
 use viz::{Request, RequestExt, StatusCode};
 
-use observatory::{config, controller, handler};
+use observatory::{config, controller, github, handler};
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -130,7 +130,8 @@ async fn main() -> Result<()> {
     let webhook_secret = settings.github.webhook_secret;
 
     let validator = RequestValidator::new(webhook_secret);
-    let mut controller = controller::Controller::new(settings.github.app_id, private_key);
+    let mut controller =
+        controller::Controller::<github::Client>::new(settings.github.app_id, private_key);
     controller.init().await?;
     log::info!("Active installations: {:?}", controller.installations());
     log::debug!("GitHub App: {:?}", controller.app);

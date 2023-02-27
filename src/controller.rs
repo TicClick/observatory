@@ -3,11 +3,12 @@ use std::collections::HashMap;
 
 use eyre::Result;
 
+use crate::github::GitHubInterface;
 use crate::helpers::comments::CommentHeader;
 use crate::helpers::pulls::{self, ConflictType};
 use crate::helpers::ToMarkdown;
 use crate::structs::IssueComment;
-use crate::{github, memory, structs};
+use crate::{memory, structs};
 
 /// Controller is a representation of a GitHub App, which contains a per-repository cache of
 /// pull requests and corresponding `.diff` files.
@@ -19,44 +20,39 @@ use crate::{github, memory, structs};
 /// (for details, see [`ConflictType`]). After that, it leaves comments on the pull request which depends on the changes; typically, that is
 /// a translation, whose owner needs to be made aware of changes they may be missing.
 #[derive(Debug, Clone)]
-pub struct Controller {
+pub struct Controller<T>
+where
+    T: GitHubInterface,
+{
     /// Information about a GitHub app (used to detect own comments).
     pub app: Option<structs::App>,
 
     /// GitHub API client -- see [`github::Client`] for details.
-    github: github::Client,
+    github: T,
 
     /// The cache with pull requests and their diffs.
     memory: memory::Memory,
 }
 
-impl Controller {
+impl<T: GitHubInterface> Controller<T> {
     pub fn new(app_id: String, private_key: String) -> Self {
         Self {
             app: None,
-            github: github::Client::new(app_id, private_key),
+            github: T::new(app_id, private_key),
             memory: memory::Memory::new(),
         }
     }
 
-    /// Fetch a list of installations. Installations generally correspond to GitHub repositories,
-    /// for which the controller will receive updates.
     pub fn installations(&self) -> Vec<structs::Installation> {
-        self.github
-            .installations
-            .lock()
-            .unwrap()
-            .values()
-            .cloned()
-            .collect()
+        self.github.cached_installations()
     }
 
     /// Build the in-memory pull request cache on start-up. This will consume a lot of GitHub API quota,
     /// but fighting a stale database cache is left as an exercise for another day.
     pub async fn init(&mut self) -> Result<()> {
         self.app = Some(self.github.app().await?);
-        self.github.discover_installations().await?;
-        for i in self.installations() {
+        let installations = self.github.discover_installations().await?;
+        for i in installations {
             for r in i.repositories {
                 for p in self.github.pulls(&r.full_name).await? {
                     self.add_pull(&r.full_name, p, false).await?;

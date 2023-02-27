@@ -5,6 +5,8 @@ use std::str::FromStr;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
+
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -66,6 +68,43 @@ impl Token {
     pub fn expired(&self) -> bool {
         chrono::Utc::now() >= self.expires_at
     }
+}
+
+#[async_trait]
+pub trait GitHubInterface {
+    fn new(app_id: String, key: String) -> Self;
+    async fn installations(&self) -> Result<Vec<structs::Installation>>;
+    fn cached_installations(&self) -> Vec<structs::Installation>;
+    async fn discover_installations(&self) -> Result<Vec<structs::Installation>>;
+    async fn app(&self) -> Result<structs::App>;
+    async fn add_installation(
+        &self,
+        mut installation: structs::Installation,
+    ) -> Result<structs::Installation>;
+    fn remove_installation(&self, installation: &structs::Installation);
+    async fn pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>>;
+    async fn post_comment(
+        &self,
+        full_repo_name: &str,
+        issue_number: i32,
+        body: String,
+    ) -> Result<()>;
+    async fn update_comment(
+        &self,
+        full_repo_name: &str,
+        comment_id: i64,
+        body: String,
+    ) -> Result<()>;
+    async fn list_comments(
+        &self,
+        full_repo_name: &str,
+        issue_number: i32,
+    ) -> Result<Vec<structs::IssueComment>>;
+    async fn read_pull_diff(
+        &self,
+        full_repo_name: &str,
+        pull_number: i32,
+    ) -> Result<unidiff::PatchSet>;
 }
 
 #[derive(Debug, Clone)]
@@ -195,24 +234,11 @@ async fn __text(rb: reqwest::RequestBuilder) -> Result<String> {
 }
 
 impl Client {
-    pub fn new(app_id: String, key: String) -> Self {
-        Self {
-            app_id,
-            key,
-            http_client: reqwest::Client::new(),
-            tokens: Arc::new(Mutex::new(HashMap::new())),
-            installations: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-
-    async fn cached_token(&self, ttype: &TokenType) -> Option<String> {
-        let tokens = self.tokens.lock().unwrap();
-        if let Some(tt) = tokens.get(ttype) {
-            if !tt.expired() {
-                return Some(tt.t.clone());
-            }
-        }
-        None
+    fn default_headers() -> reqwest::header::HeaderMap {
+        let mut m = reqwest::header::HeaderMap::new();
+        m.insert("Accept", "application/vnd.github+json".try_into().unwrap());
+        m.insert("User-Agent", "observatory".try_into().unwrap());
+        m
     }
 
     // https://docs.github.com/en/developers/apps/building-github-apps/authenticating-with-github-apps#generating-a-json-web-token-jwt
@@ -230,6 +256,30 @@ impl Client {
             created_at: claims.created_at,
             expires_at: claims.expires_at,
         }
+    }
+
+    async fn pick_token(&self, full_repo_name: &str) -> Result<String> {
+        let mut installation_id = None;
+        for (k, v) in self.installations.lock().unwrap().iter() {
+            if v.repositories.iter().any(|r| r.full_name == full_repo_name) {
+                installation_id = Some(*k);
+                break;
+            }
+        }
+        match installation_id {
+            None => eyre::bail!("No GitHub token for {} found", full_repo_name),
+            Some(iid) => self.get_installation_token(iid).await,
+        }
+    }
+
+    async fn cached_token(&self, ttype: &TokenType) -> Option<String> {
+        let tokens = self.tokens.lock().unwrap();
+        if let Some(tt) = tokens.get(ttype) {
+            if !tt.expired() {
+                return Some(tt.t.clone());
+            }
+        }
+        None
     }
 
     async fn get_jwt_token(&self) -> String {
@@ -266,33 +316,21 @@ impl Client {
             }
         }
     }
+}
 
-    fn default_headers() -> reqwest::header::HeaderMap {
-        let mut m = reqwest::header::HeaderMap::new();
-        m.insert("Accept", "application/vnd.github+json".try_into().unwrap());
-        m.insert("User-Agent", "observatory".try_into().unwrap());
-        m
-    }
-
-    pub async fn installations(&self) -> Result<Vec<structs::Installation>> {
-        let pp = self
-            .http_client
-            .get(GitHub::app_installations())
-            .bearer_auth(self.get_jwt_token().await);
-        let items: Vec<structs::Installation> = __json(pp).await?;
-        Ok(items)
-    }
-
-    pub async fn discover_installations(&self) -> Result<()> {
-        if let Ok(installations) = self.installations().await {
-            for installation in installations {
-                self.add_installation(installation).await?;
-            }
+#[async_trait]
+impl GitHubInterface for Client {
+    fn new(app_id: String, key: String) -> Self {
+        Self {
+            app_id,
+            key,
+            http_client: reqwest::Client::new(),
+            tokens: Arc::new(Mutex::new(HashMap::new())),
+            installations: Arc::new(Mutex::new(HashMap::new())),
         }
-        Ok(())
     }
 
-    pub async fn app(&self) -> Result<structs::App> {
+    async fn app(&self) -> Result<structs::App> {
         let pp = self
             .http_client
             .get(GitHub::app())
@@ -301,7 +339,39 @@ impl Client {
         Ok(app)
     }
 
-    pub async fn add_installation(&self, mut installation: structs::Installation) -> Result<()> {
+    fn cached_installations(&self) -> Vec<structs::Installation> {
+        self.installations
+            .lock()
+            .unwrap()
+            .values()
+            .cloned()
+            .collect()
+    }
+
+    // TODO: confirm that this is actually needed (see similar stuff below)
+    async fn installations(&self) -> Result<Vec<structs::Installation>> {
+        let pp = self
+            .http_client
+            .get(GitHub::app_installations())
+            .bearer_auth(self.get_jwt_token().await);
+        let items: Vec<structs::Installation> = __json(pp).await?;
+        Ok(items)
+    }
+
+    async fn discover_installations(&self) -> Result<Vec<structs::Installation>> {
+        let mut ret = Vec::new();
+        if let Ok(installations) = self.installations().await {
+            for installation in installations {
+                ret.push(self.add_installation(installation).await?);
+            }
+        }
+        Ok(ret)
+    }
+
+    async fn add_installation(
+        &self,
+        mut installation: structs::Installation,
+    ) -> Result<structs::Installation> {
         match self.get_installation_token(installation.id).await {
             Err(e) => {
                 log::error!(
@@ -326,15 +396,15 @@ impl Client {
                         self.installations
                             .lock()
                             .unwrap()
-                            .insert(installation.id, installation);
-                        Ok(())
+                            .insert(installation.id, installation.clone());
+                        Ok(installation)
                     }
                 }
             }
         }
     }
 
-    pub fn remove_installation(&self, installation: &structs::Installation) {
+    fn remove_installation(&self, installation: &structs::Installation) {
         self.installations.lock().unwrap().remove(&installation.id);
         self.tokens
             .lock()
@@ -342,21 +412,7 @@ impl Client {
             .remove(&TokenType::Installation(installation.id));
     }
 
-    async fn pick_token(&self, full_repo_name: &str) -> Result<String> {
-        let mut installation_id = None;
-        for (k, v) in self.installations.lock().unwrap().iter() {
-            if v.repositories.iter().any(|r| r.full_name == full_repo_name) {
-                installation_id = Some(*k);
-                break;
-            }
-        }
-        match installation_id {
-            None => eyre::bail!("No GitHub token for {} found", full_repo_name),
-            Some(iid) => self.get_installation_token(iid).await,
-        }
-    }
-
-    pub async fn pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>> {
+    async fn pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>> {
         let mut out = Vec::new();
         let token = self.pick_token(full_repo_name).await?;
         let per_page = 100;
@@ -383,7 +439,7 @@ impl Client {
         Ok(out)
     }
 
-    pub async fn post_comment(
+    async fn post_comment(
         &self,
         full_repo_name: &str,
         issue_number: i32,
@@ -400,7 +456,7 @@ impl Client {
         Ok(())
     }
 
-    pub async fn update_comment(
+    async fn update_comment(
         &self,
         full_repo_name: &str,
         comment_id: i64,
@@ -417,7 +473,7 @@ impl Client {
         Ok(())
     }
 
-    pub async fn list_comments(
+    async fn list_comments(
         &self,
         full_repo_name: &str,
         issue_number: i32,
@@ -445,7 +501,7 @@ impl Client {
         Ok(out)
     }
 
-    pub async fn read_pull_diff(
+    async fn read_pull_diff(
         &self,
         full_repo_name: &str,
         pull_number: i32,

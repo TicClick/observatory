@@ -1,11 +1,11 @@
 use viz::IntoResponse;
 use viz::{Request, RequestExt, StatusCode};
 
-use crate::{controller, structs};
+use crate::{controller, github, structs};
 
 pub async fn pull_request_event(req: Request, body: String) -> viz::Result<()> {
     let controller = req
-        .state::<controller::Controller>()
+        .state::<controller::Controller<github::Client>>()
         .ok_or_else(|| StatusCode::INTERNAL_SERVER_ERROR.into_error())?;
 
     let evt: structs::PullRequestEvent = serde_json::from_str(&body).map_err(|e| {
@@ -42,7 +42,7 @@ pub async fn pull_request_event(req: Request, body: String) -> viz::Result<()> {
 
 pub async fn installation_event(req: Request, body: String) -> viz::Result<()> {
     let controller = req
-        .state::<controller::Controller>()
+        .state::<controller::Controller<github::Client>>()
         .ok_or_else(|| StatusCode::INTERNAL_SERVER_ERROR.into_error())?;
 
     let evt: structs::InstallationEvent = serde_json::from_str(&body).map_err(|e| {
