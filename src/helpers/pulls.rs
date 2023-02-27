@@ -3,6 +3,8 @@ use std::cmp::{PartialEq, PartialOrd};
 
 use serde::{Deserialize, Serialize};
 
+use crate::helpers::comments;
+use crate::helpers::ToMarkdown;
 use crate::structs;
 
 /// Types of pull conflicts
@@ -19,6 +21,17 @@ pub enum ConflictType {
     /// There is a new translation of the article that has a pending change.
     /// Target = new pull (translation), reference = old pull (original).
     ExistingOriginalChange,
+}
+
+impl ToMarkdown for ConflictType {
+    fn to_markdown(&self) -> String {
+        match self {
+            ConflictType::ExistingChange => comments::EXISTING_CHANGE_TEMPLATE,
+            ConflictType::NewOriginalChange => comments::NEW_ORIGINAL_CHANGE_TEMPLATE,
+            ConflictType::ExistingOriginalChange => comments::EXISTING_ORIGINAL_CHANGE_TEMPLATE,
+        }
+        .to_string()
+    }
 }
 
 /// A structure containing information about a conflict between two pull requests.
@@ -41,7 +54,34 @@ pub struct Conflict {
     pub file_set: Vec<String>,
 }
 
+impl ToMarkdown for Conflict {
+    fn to_markdown(&self) -> String {
+        let header = comments::CommentHeader {
+            pull_number: self.reference_target,
+            conflict_type: self.kind.clone(),
+        };
+        let mut lines = Vec::new();
+        lines.push(header.to_markdown());
+        lines.push(self.kind.to_markdown());
+
+        if self.file_set.len() > 10 {
+            lines.push(format!("- {} (>10 files)", self.reference_url));
+        } else {
+            lines.push(format!("- {}, files:", self.reference_url));
+            let indent = "  ";
+            lines.push(format!("{indent}```"));
+            for file in &self.file_set {
+                lines.push(format!("{indent}{file}"));
+            }
+            lines.push(format!("{indent}```"));
+        }
+
+        lines.join("\n")
+    }
+}
+
 /// A lightweight article wrapper, made for ease of file path comparison.
+#[derive(Debug)]
 pub struct Article {
     pub path: String,
     pub language: String,
@@ -152,3 +192,7 @@ pub fn compare_pulls(
     out.sort();
     out
 }
+
+#[cfg(test)]
+#[path = "pulls_test.rs"]
+pub(crate) mod tests;

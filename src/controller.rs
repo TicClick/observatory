@@ -3,8 +3,9 @@ use std::collections::HashMap;
 
 use eyre::Result;
 
-use crate::helpers::comments::{CommentHeader, ToMarkdown};
+use crate::helpers::comments::CommentHeader;
 use crate::helpers::pulls::{self, ConflictType};
+use crate::helpers::ToMarkdown;
 use crate::structs::IssueComment;
 use crate::{github, memory, structs};
 
@@ -126,8 +127,10 @@ impl Controller {
                     let mut skip_commenting = false;
                     if let Some(ec) = existing_conflicts.get_mut(&conflict.notification_target) {
                         for i in ec.iter_mut() {
-                            if i.reference_target == conflict.reference_target && i.kind == conflict.kind {
-                                if i.file_set == conflict.file_set  {
+                            if i.reference_target == conflict.reference_target
+                                && i.kind == conflict.kind
+                            {
+                                if i.file_set == conflict.file_set {
                                     skip_commenting = true;
                                 }
                                 i.file_set = conflict.file_set.clone();
@@ -144,7 +147,8 @@ impl Controller {
                         .push(conflict);
                 }
             }
-            self.memory.replace_conflicts(full_repo_name, existing_conflicts);
+            self.memory
+                .replace_conflicts(full_repo_name, existing_conflicts);
         }
         if !trigger_updates {
             return Ok(());

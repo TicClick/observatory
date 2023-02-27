@@ -1,37 +1,24 @@
-/// `comments` contains helpers for converting structures into pretty pieces of text for GitHub comments,
+/// `comments` contains a helper for converting conflicts into YAML headers for GitHub comments,
 /// as well as comment templates.
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::pulls::{Conflict, ConflictType};
+use crate::helpers::pulls::ConflictType;
+use crate::helpers::ToMarkdown;
 
 /// Warn the author of a new pull request about someone else's unmerged work.
-const EXISTING_CHANGE_TEMPLATE: &str = "Someone else has edited same files as you did. Please check their changes in case they conflict with yours:\n";
+pub const EXISTING_CHANGE_TEMPLATE: &str = "Someone else has edited same files as you did. Please check their changes in case they conflict with yours:\n";
 
 /// Warn the author of an existing translation request about new changes in the original article.
-const NEW_ORIGINAL_CHANGE_TEMPLATE: &str = "Some articles might have changes that are missing from your translation. Please update it after they are merged:\n";
+pub const NEW_ORIGINAL_CHANGE_TEMPLATE: &str = "Some articles might have changes that are missing from your translation. Please update it after they are merged:\n";
 
 /// Warn the author of a new translation request about existing changes in the original article.
-const EXISTING_ORIGINAL_CHANGE_TEMPLATE: &str = NEW_ORIGINAL_CHANGE_TEMPLATE;
+pub const EXISTING_ORIGINAL_CHANGE_TEMPLATE: &str = NEW_ORIGINAL_CHANGE_TEMPLATE;
 
 pub const HTML_COMMENT_START: &str = "<!--";
 pub const HTML_COMMENT_END: &str = "-->";
 
-pub trait ToMarkdown {
-    fn to_markdown(&self) -> String;
-}
-impl ToMarkdown for ConflictType {
-    fn to_markdown(&self) -> String {
-        match self {
-            ConflictType::ExistingChange => EXISTING_CHANGE_TEMPLATE,
-            ConflictType::NewOriginalChange => NEW_ORIGINAL_CHANGE_TEMPLATE,
-            ConflictType::ExistingOriginalChange => EXISTING_ORIGINAL_CHANGE_TEMPLATE,
-        }
-        .to_string()
-    }
-}
-
 /// Structured header for comments made by the bot, designed to avoid tedious and error-prone parsing.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct CommentHeader {
     pub pull_number: i32,
     pub conflict_type: ConflictType,
@@ -75,28 +62,6 @@ impl ToMarkdown for CommentHeader {
     }
 }
 
-impl ToMarkdown for Conflict {
-    fn to_markdown(&self) -> String {
-        let header = CommentHeader {
-            pull_number: self.reference_target,
-            conflict_type: self.kind.clone(),
-        };
-        let mut lines = Vec::new();
-        lines.push(header.to_markdown());
-        lines.push(self.kind.to_markdown());
-
-        if self.file_set.len() > 10 {
-            lines.push(format!("- {} (>10 files)", self.reference_url));
-        } else {
-            lines.push(format!("- {}, files:", self.reference_url));
-            let indent = "  ";
-            lines.push(format!("{indent}```"));
-            for file in &self.file_set {
-                lines.push(format!("{indent}{file}"));
-            }
-            lines.push(format!("{indent}```"));
-        }
-
-        lines.join("\n")
-    }
-}
+#[cfg(test)]
+#[path = "comments_test.rs"]
+pub(crate) mod tests;

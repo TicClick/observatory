@@ -75,8 +75,11 @@ impl Memory {
     }
 
     pub fn replace_conflicts(&self, full_repo_name: &str, conflicts: HashMap<i32, Vec<Conflict>>) {
-        self.conflicts.lock().unwrap().insert(full_repo_name.to_string(), conflicts);
-    }   
+        self.conflicts
+            .lock()
+            .unwrap()
+            .insert(full_repo_name.to_string(), conflicts);
+    }
 
     pub fn drop_repository(&self, full_repo_name: &str) {
         self.pulls
