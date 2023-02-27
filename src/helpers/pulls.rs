@@ -22,16 +22,16 @@ pub enum ConflictType {
 }
 
 /// A structure containing information about a conflict between two pull requests.
-#[derive(Debug, Ord, Eq, PartialEq, PartialOrd)]
+#[derive(Debug, Ord, Eq, PartialEq, PartialOrd, Clone)]
 pub struct Conflict {
     /// Type of conflict.
     pub kind: ConflictType,
 
-    /// The pull request which will be notified. Typically its author will need to follow the reference pull for changes,
-    /// and resolve conflicts.
+    /// The pull request which triggered the conflict and will be notified.
+    /// Typically its author will need to follow the referenced pull for changes, and resolve conflicts.
     pub notification_target: i32,
 
-    /// The pull request which triggered the conflict. It is assumed to have higher priority (the other party will need to adjust).
+    /// The pull request which is considered original. It is assumed to have higher priority (the other party will need to adjust).
     pub reference_target: i32,
 
     /// A GitHub URL to the "original" pull request.

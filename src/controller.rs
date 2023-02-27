@@ -88,7 +88,7 @@ impl Controller {
     ///
     /// This should be done only when a pull request is closed or merged.
     pub fn remove_pull(&self, full_repo_name: &str, closed_pull: structs::PullRequest) {
-        self.memory.remove(full_repo_name, &closed_pull);
+        self.memory.remove_pull(full_repo_name, &closed_pull);
     }
 
     /// Handle pull request changes. This includes fetching a `.diff` file from another GitHub domain,
@@ -107,25 +107,47 @@ impl Controller {
             .read_pull_diff(full_repo_name, new_pull.number)
             .await?;
         new_pull.diff = Some(diff);
-        self.memory.insert(full_repo_name, new_pull.clone());
-        if !trigger_updates {
-            return Ok(());
-        }
+        self.memory.insert_pull(full_repo_name, new_pull.clone());
 
         let mut pending_updates: HashMap<i32, Vec<pulls::Conflict>> = HashMap::new();
-        if let Some(pulls_map) = self.memory.pulls.lock().unwrap().get(full_repo_name) {
-            for other_pull in pulls_map
-                .values()
+        if let Some(pulls_map) = self.memory.pulls(full_repo_name) {
+            let mut pulls: Vec<structs::PullRequest> = pulls_map
+                .into_values()
                 .filter(|other| other.number != new_pull.number)
-            {
-                let updates = pulls::compare_pulls(&new_pull, other_pull);
-                for update in updates {
+                .collect();
+            pulls.sort_by_key(|pr| pr.created_at);
+
+            // Compare the new pull with existing for conflicts.
+            // Known conflicts are skipped (same kind + same file set), otherwise memory is updated.
+            let mut existing_conflicts = self.memory.conflicts(full_repo_name);
+            for other_pull in pulls {
+                let conflicts = pulls::compare_pulls(&new_pull, &other_pull);
+                for conflict in conflicts {
+                    let mut skip_commenting = false;
+                    if let Some(ec) = existing_conflicts.get_mut(&conflict.notification_target) {
+                        for i in ec.iter_mut() {
+                            if i.reference_target == conflict.reference_target && i.kind == conflict.kind {
+                                if i.file_set == conflict.file_set  {
+                                    skip_commenting = true;
+                                }
+                                i.file_set = conflict.file_set.clone();
+                                break;
+                            }
+                        }
+                    }
+                    if skip_commenting {
+                        continue;
+                    }
                     pending_updates
-                        .entry(update.notification_target)
+                        .entry(conflict.notification_target)
                         .or_default()
-                        .push(update);
+                        .push(conflict);
                 }
             }
+            self.memory.replace_conflicts(full_repo_name, existing_conflicts);
+        }
+        if !trigger_updates {
+            return Ok(());
         }
         self.send_updates(pending_updates, full_repo_name).await?;
         Ok(())
