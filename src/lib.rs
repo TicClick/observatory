@@ -5,3 +5,6 @@ pub mod handler;
 pub mod helpers;
 pub mod memory;
 pub mod structs;
+
+#[cfg(test)]
+pub(crate) mod test;

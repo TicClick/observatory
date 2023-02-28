@@ -90,7 +90,7 @@ pub struct InstallationRepositories {
 }
 
 // https://docs.github.com/en/rest/issues/comments#list-issue-comments
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct IssueComment {
     pub id: i64,
     pub body: String,
