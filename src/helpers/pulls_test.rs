@@ -1,32 +1,7 @@
-use std::str::FromStr;
-
-use crate::structs::PullRequest;
-
 use super::*;
 
-fn make_simple_diff(file_names: &[&str]) -> unidiff::PatchSet {
-    let diff: Vec<String> = file_names
-        .iter()
-        .map(|file_name| {
-            format!(
-                r#"diff --git a/{0} b/{1}
-index 5483f282a0a..2c8c1482b97 100644
---- a/{0}
-+++ b/{1}
-@@ -5,6 +5,7 @@
- 
- ## Test article
- 
-+<!-- test -->
- Do whatever you want.
- 
- That's it, that's the article."#,
-                file_name, file_name
-            )
-        })
-        .collect();
-    unidiff::PatchSet::from_str(&diff.join("\n")).unwrap()
-}
+use crate::structs::PullRequest;
+use crate::test;
 
 fn make_pull(pull_number: i32, file_names: &[&str]) -> PullRequest {
     let now = chrono::Utc::now();
@@ -42,7 +17,7 @@ fn make_pull(pull_number: i32, file_names: &[&str]) -> PullRequest {
         html_url: format!("https://github.com/test/repo/pull/{}", pull_number),
         created_at: now,
         updated_at: now,
-        diff: Some(make_simple_diff(file_names)),
+        diff: Some(test::make_simple_diff(file_names)),
     }
 }
 
