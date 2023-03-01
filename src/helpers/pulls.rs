@@ -42,10 +42,10 @@ pub struct Conflict {
 
     /// The pull request which triggered the conflict and will be notified.
     /// Typically its author will need to follow the referenced pull for changes, and resolve conflicts.
-    pub notification_target: i32,
+    pub trigger: i32,
 
     /// The pull request which is considered original. It is assumed to have higher priority (the other party will need to adjust).
-    pub reference_target: i32,
+    pub original: i32,
 
     /// A GitHub URL to the "original" pull request.
     pub reference_url: String,
@@ -54,10 +54,70 @@ pub struct Conflict {
     pub file_set: Vec<String>,
 }
 
+impl Conflict {
+    pub fn new(
+        kind: ConflictType,
+        trigger: i32,
+        original: i32,
+        reference_url: String,
+        file_set: Vec<String>,
+    ) -> Self {
+        Self {
+            kind,
+            trigger,
+            original,
+            reference_url,
+            file_set,
+        }
+    }
+    pub fn existing_change(
+        trigger: i32,
+        original: i32,
+        reference_url: String,
+        file_set: Vec<String>,
+    ) -> Self {
+        Self {
+            kind: ConflictType::ExistingChange,
+            trigger,
+            original,
+            reference_url,
+            file_set,
+        }
+    }
+    pub fn new_original_change(
+        trigger: i32,
+        original: i32,
+        reference_url: String,
+        file_set: Vec<String>,
+    ) -> Self {
+        Self {
+            kind: ConflictType::NewOriginalChange,
+            trigger,
+            original,
+            reference_url,
+            file_set,
+        }
+    }
+    pub fn existing_original_change(
+        trigger: i32,
+        original: i32,
+        reference_url: String,
+        file_set: Vec<String>,
+    ) -> Self {
+        Self {
+            kind: ConflictType::ExistingOriginalChange,
+            trigger,
+            original,
+            reference_url,
+            file_set,
+        }
+    }
+}
+
 impl ToMarkdown for Conflict {
     fn to_markdown(&self) -> String {
         let header = comments::CommentHeader {
-            pull_number: self.reference_target,
+            pull_number: self.original,
             conflict_type: self.kind.clone(),
         };
         let mut lines = Vec::new();
@@ -163,31 +223,28 @@ pub fn compare_pulls(
 
     let mut out = Vec::new();
     if !overlaps.is_empty() {
-        out.push(Conflict {
-            kind: ConflictType::ExistingChange,
-            notification_target: new_pull.number,
-            reference_target: other_pull.number,
-            reference_url: other_pull.html_url.clone(),
-            file_set: overlaps,
-        });
+        out.push(Conflict::existing_change(
+            new_pull.number,
+            other_pull.number,
+            other_pull.html_url.clone(),
+            overlaps,
+        ));
     }
     if !originals.is_empty() {
-        out.push(Conflict {
-            kind: ConflictType::NewOriginalChange,
-            notification_target: other_pull.number,
-            reference_target: new_pull.number,
-            reference_url: new_pull.html_url.clone(),
-            file_set: originals,
-        })
+        out.push(Conflict::new_original_change(
+            other_pull.number,
+            new_pull.number,
+            new_pull.html_url.clone(),
+            originals,
+        ));
     }
     if !translations.is_empty() {
-        out.push(Conflict {
-            kind: ConflictType::ExistingOriginalChange,
-            notification_target: new_pull.number,
-            reference_target: other_pull.number,
-            reference_url: other_pull.html_url.clone(),
-            file_set: translations,
-        })
+        out.push(Conflict::existing_original_change(
+            new_pull.number,
+            other_pull.number,
+            other_pull.html_url.clone(),
+            translations,
+        ));
     }
     out.sort();
     out

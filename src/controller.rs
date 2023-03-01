@@ -121,11 +121,9 @@ impl<T: GitHubInterface> Controller<T> {
                 let conflicts = pulls::compare_pulls(&new_pull, &other_pull);
                 for conflict in conflicts {
                     let mut skip_commenting = false;
-                    if let Some(ec) = existing_conflicts.get_mut(&conflict.notification_target) {
+                    if let Some(ec) = existing_conflicts.get_mut(&conflict.trigger) {
                         for i in ec.iter_mut() {
-                            if i.reference_target == conflict.reference_target
-                                && i.kind == conflict.kind
-                            {
+                            if i.original == conflict.original && i.kind == conflict.kind {
                                 if i.file_set == conflict.file_set {
                                     skip_commenting = true;
                                 }
@@ -138,11 +136,11 @@ impl<T: GitHubInterface> Controller<T> {
                         continue;
                     }
                     pending_updates
-                        .entry(conflict.notification_target)
+                        .entry(conflict.trigger)
                         .or_default()
                         .push(conflict.clone());
                     existing_conflicts
-                        .entry(conflict.notification_target)
+                        .entry(conflict.trigger)
                         .or_default()
                         .push(conflict);
                 }
@@ -184,7 +182,7 @@ impl<T: GitHubInterface> Controller<T> {
             }
 
             for u in updates {
-                let key = (u.reference_target, u.kind.clone());
+                let key = (u.original, u.kind.clone());
                 if let Some(existing_comment) = pull_references.get(&key) {
                     if let Err(e) = self
                         .github
