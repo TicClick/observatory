@@ -1,32 +1,13 @@
 use super::*;
 
-use crate::structs::PullRequest;
-use crate::test;
-
-fn make_pull(pull_number: i32, file_names: &[&str]) -> PullRequest {
-    let now = chrono::Utc::now();
-    structs::PullRequest {
-        id: pull_number as i64,
-        number: pull_number,
-        state: "open".to_string(),
-        title: "Update `Ranking criteria`".to_string(),
-        user: structs::Actor {
-            id: 1,
-            login: "BanchoBot".to_string(),
-        },
-        html_url: format!("https://github.com/test/repo/pull/{}", pull_number),
-        created_at: now,
-        updated_at: now,
-        diff: Some(test::make_simple_diff(file_names)),
-    }
-}
+use crate::test::{self, pull_link};
 
 #[test]
 fn conflict_to_markdown() {
     let c1 = Conflict::existing_change(
         1,
         2,
-        "https://github.com/test/repo/pull/2".to_string(),
+        pull_link("test/repo", 2),
         vec!["wiki/Ranking_criteria/en.md".to_string()],
     );
     assert_eq!(
@@ -48,7 +29,7 @@ conflict_type: ExistingChange
     let c2 = Conflict::new_original_change(
         2,
         3,
-        "https://github.com/test/repo/pull/3".to_string(),
+        pull_link("test/repo", 3),
         vec!["wiki/Ranking_criteria/en.md".to_string(); 11],
     );
     assert_eq!(
@@ -86,29 +67,29 @@ fn article_basic() {
 
 #[test]
 fn different_paths_no_conflict() {
-    let existing_pull = make_pull(1, &["wiki/First_article/en.md"]);
-    let new_pull = make_pull(2, &["wiki/Second_article/en.md"]);
+    let existing_pull = test::make_pull(1, &["wiki/First_article/en.md"]);
+    let new_pull = test::make_pull(2, &["wiki/Second_article/en.md"]);
     assert!(compare_pulls(&new_pull, &existing_pull).is_empty());
 }
 
 #[test]
 fn no_markdown_no_conflict() {
-    let existing_pull = make_pull(1, &["wiki/First_article/img/test.png"]);
-    let new_pull = make_pull(2, &["wiki/First_article/img/test.png"]);
+    let existing_pull = test::make_pull(1, &["wiki/First_article/img/test.png"]);
+    let new_pull = test::make_pull(2, &["wiki/First_article/img/test.png"]);
     assert!(compare_pulls(&new_pull, &existing_pull).is_empty());
 }
 
 #[test]
 fn single_file_existing_change() {
-    let existing_pull = make_pull(1, &["wiki/Article/en.md"]);
-    let new_pull = make_pull(2, &["wiki/Article/en.md"]);
+    let existing_pull = test::make_pull(1, &["wiki/Article/en.md"]);
+    let new_pull = test::make_pull(2, &["wiki/Article/en.md"]);
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
         vec![Conflict::existing_change(
             2,
             1,
-            "https://github.com/test/repo/pull/1".to_string(),
+            pull_link("test/repo", 1),
             vec!["wiki/Article/en.md".to_string()],
         )]
     );
@@ -116,7 +97,7 @@ fn single_file_existing_change() {
 
 #[test]
 fn multiple_files_existing_change() {
-    let existing_pull = make_pull(
+    let existing_pull = test::make_pull(
         1,
         &[
             "wiki/Article/en.md",
@@ -125,7 +106,7 @@ fn multiple_files_existing_change() {
             "wiki/Unrelated_article/ru.md",
         ],
     );
-    let new_pull = make_pull(
+    let new_pull = test::make_pull(
         2,
         &[
             "wiki/Ranking_criteria/en.md",
@@ -140,7 +121,7 @@ fn multiple_files_existing_change() {
         vec![Conflict::existing_change(
             2,
             1,
-            "https://github.com/test/repo/pull/1".to_string(),
+            pull_link("test/repo", 1),
             vec![
                 "wiki/Article/en.md".to_string(),
                 "wiki/Ranking_criteria/en.md".to_string(),
@@ -152,7 +133,7 @@ fn multiple_files_existing_change() {
         vec![Conflict::existing_change(
             1,
             2,
-            "https://github.com/test/repo/pull/2".to_string(),
+            pull_link("test/repo", 2),
             vec![
                 "wiki/Article/en.md".to_string(),
                 "wiki/Ranking_criteria/en.md".to_string(),
@@ -163,15 +144,15 @@ fn multiple_files_existing_change() {
 
 #[test]
 fn existing_translation_new_original_change() {
-    let existing_pull = make_pull(1, &["wiki/Article/ru.md"]);
-    let new_pull = make_pull(2, &["wiki/Article/en.md"]);
+    let existing_pull = test::make_pull(1, &["wiki/Article/ru.md"]);
+    let new_pull = test::make_pull(2, &["wiki/Article/en.md"]);
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
         vec![Conflict::new_original_change(
             1,
             2,
-            "https://github.com/test/repo/pull/2".to_string(),
+            pull_link("test/repo", 2),
             vec!["wiki/Article/en.md".to_string(),],
         )]
     );
@@ -179,15 +160,15 @@ fn existing_translation_new_original_change() {
 
 #[test]
 fn new_translation_existing_original_change() {
-    let existing_pull = make_pull(1, &["wiki/Article/en.md"]);
-    let new_pull = make_pull(2, &["wiki/Article/ru.md"]);
+    let existing_pull = test::make_pull(1, &["wiki/Article/en.md"]);
+    let new_pull = test::make_pull(2, &["wiki/Article/ru.md"]);
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
         vec![Conflict::existing_original_change(
             2,
             1,
-            "https://github.com/test/repo/pull/1".to_string(),
+            pull_link("test/repo", 1),
             vec!["wiki/Article/ru.md".to_string(),],
         )]
     );
