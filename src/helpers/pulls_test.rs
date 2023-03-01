@@ -23,13 +23,12 @@ fn make_pull(pull_number: i32, file_names: &[&str]) -> PullRequest {
 
 #[test]
 fn conflict_to_markdown() {
-    let c1 = Conflict {
-        kind: ConflictType::ExistingChange,
-        notification_target: 1,
-        reference_target: 2,
-        reference_url: "https://github.com/test/repo/pull/2".to_string(),
-        file_set: vec!["wiki/Ranking_criteria/en.md".to_string()],
-    };
+    let c1 = Conflict::existing_change(
+        1,
+        2,
+        "https://github.com/test/repo/pull/2".to_string(),
+        vec!["wiki/Ranking_criteria/en.md".to_string()],
+    );
     assert_eq!(
         c1.to_markdown(),
         format!(
@@ -46,13 +45,12 @@ conflict_type: ExistingChange
         )
     );
 
-    let c2 = Conflict {
-        kind: ConflictType::NewOriginalChange,
-        notification_target: 2,
-        reference_target: 3,
-        reference_url: "https://github.com/test/repo/pull/3".to_string(),
-        file_set: vec!["wiki/Ranking_criteria/en.md".to_string(); 11],
-    };
+    let c2 = Conflict::new_original_change(
+        2,
+        3,
+        "https://github.com/test/repo/pull/3".to_string(),
+        vec!["wiki/Ranking_criteria/en.md".to_string(); 11],
+    );
     assert_eq!(
         c2.to_markdown(),
         format!(
@@ -107,13 +105,12 @@ fn single_file_existing_change() {
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
-        vec![Conflict {
-            kind: ConflictType::ExistingChange,
-            notification_target: 2,
-            reference_target: 1,
-            reference_url: "https://github.com/test/repo/pull/1".to_string(),
-            file_set: vec!["wiki/Article/en.md".to_string()],
-        }]
+        vec![Conflict::existing_change(
+            2,
+            1,
+            "https://github.com/test/repo/pull/1".to_string(),
+            vec!["wiki/Article/en.md".to_string()],
+        )]
     );
 }
 
@@ -140,29 +137,27 @@ fn multiple_files_existing_change() {
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
-        vec![Conflict {
-            kind: ConflictType::ExistingChange,
-            notification_target: 2,
-            reference_target: 1,
-            reference_url: "https://github.com/test/repo/pull/1".to_string(),
-            file_set: vec![
+        vec![Conflict::existing_change(
+            2,
+            1,
+            "https://github.com/test/repo/pull/1".to_string(),
+            vec![
                 "wiki/Article/en.md".to_string(),
                 "wiki/Ranking_criteria/en.md".to_string(),
-            ],
-        }]
+            ]
+        )]
     );
     assert_eq!(
         compare_pulls(&existing_pull, &new_pull),
-        vec![Conflict {
-            kind: ConflictType::ExistingChange,
-            notification_target: 1,
-            reference_target: 2,
-            reference_url: "https://github.com/test/repo/pull/2".to_string(),
-            file_set: vec![
+        vec![Conflict::existing_change(
+            1,
+            2,
+            "https://github.com/test/repo/pull/2".to_string(),
+            vec![
                 "wiki/Article/en.md".to_string(),
                 "wiki/Ranking_criteria/en.md".to_string(),
-            ],
-        }]
+            ]
+        )]
     );
 }
 
@@ -173,13 +168,12 @@ fn existing_translation_new_original_change() {
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
-        vec![Conflict {
-            kind: ConflictType::NewOriginalChange,
-            notification_target: 1,
-            reference_target: 2,
-            reference_url: "https://github.com/test/repo/pull/2".to_string(),
-            file_set: vec!["wiki/Article/en.md".to_string(),],
-        }]
+        vec![Conflict::new_original_change(
+            1,
+            2,
+            "https://github.com/test/repo/pull/2".to_string(),
+            vec!["wiki/Article/en.md".to_string(),],
+        )]
     );
 }
 
@@ -190,12 +184,11 @@ fn new_translation_existing_original_change() {
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
-        vec![Conflict {
-            kind: ConflictType::ExistingOriginalChange,
-            notification_target: 2,
-            reference_target: 1,
-            reference_url: "https://github.com/test/repo/pull/1".to_string(),
-            file_set: vec!["wiki/Article/ru.md".to_string(),],
-        }]
+        vec![Conflict::existing_original_change(
+            2,
+            1,
+            "https://github.com/test/repo/pull/1".to_string(),
+            vec!["wiki/Article/ru.md".to_string(),],
+        )]
     );
 }
