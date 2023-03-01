@@ -44,6 +44,12 @@ impl GitHub {
     pub fn issue_comment(full_repo_name: &str, comment_id: i64) -> String {
         format!("{GITHUB_API_ROOT}/repos/{full_repo_name}/issues/comments/{comment_id}")
     }
+
+    // GitHub.com links
+
+    pub fn pull_url(full_repo_name: &str, pull_number: i32) -> String {
+        format!("{GITHUB_ROOT}/{full_repo_name}/pull/{pull_number}")
+    }
     pub fn diff_url(full_repo_name: &str, pull_number: i32) -> String {
         // Diff links are handled by github.com, not the API subdomain.
         format!("{GITHUB_ROOT}/{full_repo_name}/pull/{pull_number}.diff")

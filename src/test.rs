@@ -8,6 +8,28 @@ use eyre::Result;
 use crate::github;
 use crate::structs;
 
+pub fn pull_link(full_repo_name: &str, pull_number: i32) -> String {
+    github::GitHub::pull_url(full_repo_name, pull_number)
+}
+
+pub fn make_pull(pull_id: i64, file_names: &[&str]) -> structs::PullRequest {
+    let now = chrono::Utc::now();
+    structs::PullRequest {
+        id: pull_id,
+        number: pull_id as i32,
+        state: "open".to_string(),
+        title: "Update `Ranking criteria`".to_string(),
+        user: structs::Actor {
+            id: 1,
+            login: "BanchoBot".to_string(),
+        },
+        html_url: pull_link("test/repo", pull_id as i32),
+        created_at: now,
+        updated_at: now,
+        diff: Some(make_simple_diff(file_names)),
+    }
+}
+
 pub fn make_simple_diff(file_names: &[&str]) -> unidiff::PatchSet {
     let diff: Vec<String> = file_names
         .iter()
@@ -189,25 +211,8 @@ impl github::GitHubInterface for DummyGitHubClient {
 
 impl DummyGitHubClient {
     pub fn test_add_pull(&self, full_repo_name: &str, file_names: &[&str]) -> structs::PullRequest {
-        let now = chrono::Utc::now();
         let mut last_pull_id = self.last_pull_id.lock().unwrap();
-        let pull = structs::PullRequest {
-            id: *last_pull_id,
-            number: *last_pull_id as i32,
-            state: "open".to_string(),
-            title: "[FI] Update `Rules`".to_string(),
-            user: structs::Actor {
-                id: 1,
-                login: "LunaticMara".to_string(),
-            },
-            html_url: format!(
-                "https://github.com/{}/pull/{}",
-                full_repo_name, *last_pull_id
-            ),
-            created_at: now,
-            updated_at: now,
-            diff: Some(make_simple_diff(file_names)),
-        };
+        let pull = make_pull(*last_pull_id, file_names);
         *last_pull_id += 1;
         self.pulls
             .lock()
