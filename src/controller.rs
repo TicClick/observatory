@@ -140,6 +140,10 @@ impl<T: GitHubInterface> Controller<T> {
                     pending_updates
                         .entry(conflict.notification_target)
                         .or_default()
+                        .push(conflict.clone());
+                    existing_conflicts
+                        .entry(conflict.notification_target)
+                        .or_default()
                         .push(conflict);
                 }
             }
