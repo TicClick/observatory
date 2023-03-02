@@ -1,6 +1,7 @@
 // TODO: document members of the module where it makes sense
 
 use std::str::FromStr;
+use std::time::Duration;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -18,8 +19,72 @@ use crate::structs;
 const GITHUB_API_ROOT: &str = "https://api.github.com";
 const GITHUB_ROOT: &str = "https://github.com";
 
-const RETRIES: i32 = 3;
 const RETRYABLE_ERRORS: [u16; 4] = [429, 500, 502, 503];
+
+const MIN_TIMEOUT: Duration = Duration::from_secs(1);
+const MAX_TIMEOUT: Duration = Duration::from_secs(30);
+const BACKOFF_MP: f32 = 1.2;
+
+/// Helper for exponential backoff retries. Usage:
+///
+/// ```ignore
+/// // Allow up to 3 retries and sleep for 1, 1.2, and 1.44s between them.
+/// let mut t = ProgressiveTimeout::new(3);
+/// while let None = fetch_data() {
+///     t.sleep();
+///     if let Err(e) = t.tick() {
+///         panic!("failed to fetch data: {e:?}")
+///     }
+/// }
+/// ```
+pub struct ProgressiveTimeout {
+    current_timeout: Duration,
+    current_retry: i32,
+    max_retries: i32,
+    total_time_slept: Duration,
+}
+
+impl ProgressiveTimeout {
+    pub fn new(max_retries: i32) -> Self {
+        Self {
+            current_timeout: MIN_TIMEOUT,
+            current_retry: 0,
+            max_retries,
+            total_time_slept: Duration::new(0, 0),
+        }
+    }
+
+    pub fn current_timeout(&self) -> Duration {
+        self.current_timeout
+    }
+
+    pub fn current_retry(&self) -> i32 {
+        self.current_retry
+    }
+
+    pub fn max_retries(&self) -> i32 {
+        self.max_retries
+    }
+
+    pub fn tick(&mut self) -> Result<()> {
+        if self.current_retry == self.max_retries {
+            eyre::bail!(
+                "Retries exhausted ({0}/{0}, time slept in total: {1:?})",
+                self.max_retries,
+                self.total_time_slept
+            )
+        }
+        let new_timeout = std::cmp::min(self.current_timeout.mul_f32(BACKOFF_MP), MAX_TIMEOUT);
+        self.current_retry += 1;
+        self.current_timeout = new_timeout;
+        Ok(())
+    }
+
+    pub fn sleep(&mut self) {
+        std::thread::sleep(self.current_timeout);
+        self.total_time_slept += self.current_timeout;
+    }
+}
 
 pub struct GitHub {}
 impl GitHub {
@@ -172,7 +237,9 @@ const INTERESTING_HEADERS: [&str; 7] = [
 async fn __text(rb: reqwest::RequestBuilder) -> Result<String> {
     let prepared_request = rb.headers(Client::default_headers());
     let mut url: Option<reqwest::Url> = None;
-    for attempt in 0..RETRIES {
+
+    let mut timer = ProgressiveTimeout::new(10);
+    while timer.tick().is_ok() {
         match prepared_request.try_clone().unwrap().send().await {
             Ok(response) => {
                 // Yes, you have to deconstruct the response by itself if you step from the trodden path
@@ -197,12 +264,12 @@ async fn __text(rb: reqwest::RequestBuilder) -> Result<String> {
                     "HTTP {} {} ({}/{})",
                     status,
                     url.as_ref().unwrap(),
-                    attempt + 1,
-                    RETRIES,
+                    timer.current_retry(),
+                    timer.max_retries(),
                 );
                 if status.is_client_error() || status.is_server_error() || body.is_err() {
                     let can_be_retried = RETRYABLE_ERRORS.contains(&status.as_u16());
-                    let log_level = if can_be_retried && attempt < RETRIES - 1 {
+                    let log_level = if can_be_retried {
                         log::Level::Warn
                     } else {
                         log::Level::Error
@@ -215,8 +282,9 @@ async fn __text(rb: reqwest::RequestBuilder) -> Result<String> {
                         body
                     );
 
-                    // This will correctly end the retry loop if attempt == RETRIES - 1
                     if can_be_retried {
+                        log::info!("Sleeping for {:?}...", timer.current_timeout);
+                        timer.sleep();
                         continue;
                     }
                     eyre::bail!(logging_string);
