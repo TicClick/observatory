@@ -99,6 +99,7 @@ impl<T: GitHubInterface> Controller<T> {
         mut new_pull: structs::PullRequest,
         trigger_updates: bool,
     ) -> Result<()> {
+        // TODO: add tests for pending updates
         let diff = self
             .github
             .read_pull_diff(full_repo_name, new_pull.number)
@@ -116,38 +117,86 @@ impl<T: GitHubInterface> Controller<T> {
 
             // Compare the new pull with existing for conflicts.
             // Known conflicts are skipped (same kind + same file set), otherwise memory is updated.
+
+            // FIXME: this is utter jack shit, but it works. Need to find a way to do this in a clean manner
+            // without a handful of fucking flags and double loops:
+            // - Handle file set updates;
+            // - When P2 conflicts with existing P1, remember it and automatically reject the reverse "P1 conflicts with P2" situations
+            //   (in this case, P1 is updated and treated as a new pull).
+
             let mut existing_conflicts = self.memory.conflicts(full_repo_name);
             for other_pull in pulls {
                 let conflicts = pulls::compare_pulls(&new_pull, &other_pull);
-                for conflict in conflicts {
-                    let mut skip_commenting = false;
-                    if let Some(ec) = existing_conflicts.get_mut(&conflict.trigger) {
-                        for i in ec.iter_mut() {
-                            if i.original == conflict.original && i.kind == conflict.kind {
-                                if i.file_set == conflict.file_set {
-                                    skip_commenting = true;
+                for mut conflict in conflicts {
+                    let mut skip_conflict_update = false;
+                    let mut reverse_conflict_found = false;
+                    let mut file_set_updated = false;
+
+                    // Check for reverse conflict -- it should take priority.
+                    // FIXME: this shouldn't exist
+                    if let Some(ecc) = existing_conflicts.get_mut(&conflict.original) {
+                        for i in ecc.iter_mut() {
+                            if i.original == conflict.trigger && i.trigger == conflict.original {
+                                if i.file_set != conflict.file_set {
+                                    file_set_updated = true;
+                                    i.file_set = conflict.file_set;
+                                } else {
+                                    skip_conflict_update = true;
                                 }
-                                i.file_set = conflict.file_set.clone();
+                                conflict = i.clone();
+                                reverse_conflict_found = true;
                                 break;
                             }
                         }
                     }
-                    if skip_commenting {
+
+                    // FIXME: see `test_new_original_change_conflict_double_update` -- need to find a way to prevent original pull updates from
+                    // adding fake duplicate conflicts.
+                    let same_conflict = |c1: &ConflictType, c2: &ConflictType| -> bool {
+                        c1 == c2
+                            || (matches!(c1, ConflictType::ExistingOriginalChange)
+                                && matches!(c2, ConflictType::NewOriginalChange)
+                                || matches!(c1, ConflictType::NewOriginalChange)
+                                    && matches!(c2, ConflictType::ExistingOriginalChange))
+                    };
+
+                    // A regular update cycle.
+                    // FIXME: this should be combined with the above cycle, and `same_conflict` removed.
+                    if !reverse_conflict_found {
+                        if let Some(ec) = existing_conflicts.get_mut(&conflict.trigger) {
+                            for i in ec.iter_mut() {
+                                if i.original == conflict.original
+                                    && same_conflict(&i.kind, &conflict.kind)
+                                {
+                                    if i.file_set == conflict.file_set {
+                                        skip_conflict_update = true;
+                                    }
+                                    file_set_updated = true;
+                                    i.file_set = conflict.file_set.clone();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if skip_conflict_update {
                         continue;
                     }
                     pending_updates
                         .entry(conflict.trigger)
                         .or_default()
                         .push(conflict.clone());
-                    existing_conflicts
-                        .entry(conflict.trigger)
-                        .or_default()
-                        .push(conflict);
+                    if !reverse_conflict_found && !file_set_updated {
+                        existing_conflicts
+                            .entry(conflict.trigger)
+                            .or_default()
+                            .push(conflict);
+                    }
                 }
             }
             self.memory
                 .replace_conflicts(full_repo_name, existing_conflicts);
         }
+
         if !trigger_updates {
             return Ok(());
         }
@@ -167,6 +216,7 @@ impl<T: GitHubInterface> Controller<T> {
         pending: HashMap<i32, Vec<pulls::Conflict>>,
         full_repo_name: &str,
     ) -> Result<()> {
+        // TODO: add tests
         for (target, updates) in pending.into_iter() {
             let existing_comments = self
                 .github
@@ -228,4 +278,6 @@ impl<T: GitHubInterface> Controller<T> {
     }
 }
 
-// TODO: add tests
+#[cfg(test)]
+#[path = "controller_test.rs"]
+pub(crate) mod tests;
