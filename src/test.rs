@@ -224,7 +224,7 @@ impl DummyGitHubClient {
         pull
     }
 
-    pub fn test_replace_diff(&self, full_repo_name: &str, pull_number: i32, file_names: &[&str]) {
+    pub fn test_update_pull(&self, full_repo_name: &str, pull_number: i32, file_names: &[&str]) {
         for p in self
             .pulls
             .lock()
@@ -234,7 +234,25 @@ impl DummyGitHubClient {
         {
             if p.number == pull_number {
                 p.diff = Some(make_simple_diff(file_names));
+                p.updated_at = chrono::Utc::now();
+                return;
             }
         }
+        panic!("no pull #{pull_number}");
+    }
+
+    pub fn fetch_pull(&self, full_repo_name: &str, pull_number: i32) -> structs::PullRequest {
+        for p in self
+            .pulls
+            .lock()
+            .unwrap()
+            .entry(full_repo_name.to_string())
+            .or_default()
+        {
+            if p.number == pull_number {
+                return p.clone();
+            }
+        }
+        panic!("no pull #{pull_number}");
     }
 }
