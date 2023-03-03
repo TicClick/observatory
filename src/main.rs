@@ -113,6 +113,7 @@ async fn main() -> Result<()> {
         .expect("Failed to configure the terminal logger");
     } else {
         let file = std::fs::OpenOptions::new()
+            .create(true)
             .append(true)
             .open(settings.logging.file)
             .expect("Failed to open the log file -- check CLI arguments");
