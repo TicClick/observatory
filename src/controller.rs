@@ -99,7 +99,6 @@ impl<T: GitHubInterface> Controller<T> {
         mut new_pull: structs::PullRequest,
         trigger_updates: bool,
     ) -> Result<()> {
-        // TODO: add tests for pending updates
         let diff = self
             .github
             .read_pull_diff(full_repo_name, new_pull.number)
@@ -216,7 +215,6 @@ impl<T: GitHubInterface> Controller<T> {
         pending: HashMap<i32, Vec<pulls::Conflict>>,
         full_repo_name: &str,
     ) -> Result<()> {
-        // TODO: add tests
         for (target, updates) in pending.into_iter() {
             let existing_comments = self
                 .github

@@ -18,7 +18,7 @@ pub const HTML_COMMENT_START: &str = "<!--";
 pub const HTML_COMMENT_END: &str = "-->";
 
 /// Structured header for comments made by the bot, designed to avoid tedious and error-prone parsing.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, PartialOrd, Ord, Eq)]
 pub struct CommentHeader {
     pub pull_number: i32,
     pub conflict_type: ConflictType,
