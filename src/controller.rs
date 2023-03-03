@@ -47,6 +47,10 @@ impl<T: GitHubInterface> Controller<T> {
         self.github.cached_installations()
     }
 
+    pub fn update_cached_installation(&self, installation: structs::Installation) {
+        self.github.update_cached_installation(installation);
+    }
+
     /// Build the in-memory pull request cache on start-up. This will consume a lot of GitHub API quota,
     /// but fighting a stale database cache is left as an exercise for another day.
     pub async fn init(&mut self) -> Result<()> {
@@ -54,9 +58,7 @@ impl<T: GitHubInterface> Controller<T> {
         let installations = self.github.discover_installations().await?;
         for i in installations {
             for r in i.repositories {
-                for p in self.github.pulls(&r.full_name).await? {
-                    self.add_pull(&r.full_name, p, false).await?;
-                }
+                self.add_repository(&r).await?;
             }
         }
         Ok(())
@@ -66,9 +68,15 @@ impl<T: GitHubInterface> Controller<T> {
     pub async fn add_installation(&self, installation: structs::Installation) -> Result<()> {
         self.github.add_installation(installation.clone()).await?;
         for r in installation.repositories {
-            for p in self.github.pulls(&r.full_name).await? {
-                self.add_pull(&r.full_name, p, false).await?;
-            }
+            self.add_repository(&r).await?;
+        }
+        Ok(())
+    }
+
+    /// Add a repository and fetch its pull requests.
+    pub async fn add_repository(&self, r: &structs::Repository) -> Result<()> {
+        for p in self.github.pulls(&r.full_name).await? {
+            self.add_pull(&r.full_name, p, false).await?;
         }
         Ok(())
     }
@@ -77,8 +85,12 @@ impl<T: GitHubInterface> Controller<T> {
     pub fn remove_installation(&self, installation: structs::Installation) {
         self.github.remove_installation(&installation);
         for r in installation.repositories {
-            self.memory.drop_repository(&r.full_name);
+            self.remove_repository(&r);
         }
+    }
+
+    pub fn remove_repository(&self, r: &structs::Repository) {
+        self.memory.drop_repository(&r.full_name);
     }
 
     /// Purge a pull request from memory, excluding it from conflict detection.

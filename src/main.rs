@@ -85,9 +85,7 @@ pub async fn github_events(mut req: Request) -> viz::Result<()> {
     match event_type.as_str() {
         "pull_request" => handler::pull_request_event(req, body).await,
         "installation" => handler::installation_event(req, body).await,
-        // TODO: handle "installation_repositories" events, similarly to the above. This is nice to have, but not a necessity,
-        // since we retain installation tokens even if a repository is removed from us.
-        // https://docs.github.com/webhooks-and-events/webhooks/webhook-events-and-payloads#installation_repositories
+        "installation_repositories" => handler::installation_repositories_event(req, body).await,
         _ => Ok(()),
     }
 }

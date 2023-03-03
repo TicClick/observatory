@@ -56,6 +56,16 @@ pub struct InstallationEvent {
     pub repositories: Vec<Repository>,
 }
 
+// https://docs.github.com/webhooks-and-events/webhooks/webhook-events-and-payloads#installation_repositories
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InstallationRepositoriesEvent {
+    pub action: String,
+    pub installation: Installation,
+    pub sender: Actor,
+    pub repositories_added: Vec<Repository>,
+    pub repositories_removed: Vec<Repository>,
+}
+
 // Pull request events only contain installation id
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InstallationIdWrapper {

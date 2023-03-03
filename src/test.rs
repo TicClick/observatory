@@ -91,6 +91,13 @@ impl github::GitHubInterface for DummyGitHubClient {
             .collect()
     }
 
+    fn update_cached_installation(&self, installation: structs::Installation) {
+        self.installations
+            .lock()
+            .unwrap()
+            .insert(installation.id, installation.clone());
+    }
+
     // TODO: set repositories?
     async fn discover_installations(&self) -> Result<Vec<structs::Installation>> {
         Ok(self.cached_installations())

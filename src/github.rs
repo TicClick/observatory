@@ -146,6 +146,7 @@ pub trait GitHubInterface {
     fn new(app_id: String, key: String) -> Self;
     async fn installations(&self) -> Result<Vec<structs::Installation>>;
     fn cached_installations(&self) -> Vec<structs::Installation>;
+    fn update_cached_installation(&self, installation: structs::Installation);
     async fn discover_installations(&self) -> Result<Vec<structs::Installation>>;
     async fn app(&self) -> Result<structs::App>;
     async fn add_installation(
@@ -422,6 +423,13 @@ impl GitHubInterface for Client {
             .collect()
     }
 
+    fn update_cached_installation(&self, installation: structs::Installation) {
+        self.installations
+            .lock()
+            .unwrap()
+            .insert(installation.id, installation.clone());
+    }
+
     // TODO: confirm that this is actually needed (see similar stuff below)
     async fn installations(&self) -> Result<Vec<structs::Installation>> {
         let pp = self
@@ -467,10 +475,7 @@ impl GitHubInterface for Client {
                     }
                     Ok(response) => {
                         installation.repositories = response.repositories;
-                        self.installations
-                            .lock()
-                            .unwrap()
-                            .insert(installation.id, installation.clone());
+                        self.update_cached_installation(installation.clone());
                         Ok(installation)
                     }
                 }
