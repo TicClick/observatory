@@ -24,7 +24,7 @@ if [[ "$systemd_service_dir" = "${HOME}"* ]]; then
     mkdir -p "$systemd_service_dir"
 fi
 
-cat >> "$systemd_service_dir/$binary_name.path" <<EOF
+cat > "$systemd_service_dir/$binary_name.path" <<EOF
 [Unit]
 Description=Monitor the $binary_name binary for changes
 
@@ -36,9 +36,9 @@ Unit=$binary_name.service
 WantedBy=default.target
 EOF
 
-cat >> "$systemd_service_dir/$binary_name.service" <<EOF
+cat > "$systemd_service_dir/$binary_name.service" <<EOF
 [Unit]
-Description=Notifications for osu! moderators
+Description=osu! wiki helper
 Wants=network.target
 
 [Service]
