@@ -49,8 +49,19 @@ impl Memory {
         if let Some(pulls) = self.pulls.lock().unwrap().get_mut(full_repo_name) {
             pulls.remove(&p.number);
         }
-        if let Some(conflicts) = self.conflicts.lock().unwrap().get_mut(full_repo_name) {
-            conflicts.remove(&p.number);
+        if let Some(all_conflicts) = self.conflicts.lock().unwrap().get_mut(full_repo_name) {
+            all_conflicts.remove(&p.number);
+            for conflicts in all_conflicts.values_mut() {
+                // Copied from the `Vec::drain_filter` docstring since the feature itself is unstable.
+                let mut i = 0;
+                while i < conflicts.len() {
+                    if conflicts[i].original == p.number || conflicts[i].trigger == p.number {
+                        conflicts.remove(i);
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
         }
     }
 
