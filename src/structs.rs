@@ -53,6 +53,8 @@ pub struct InstallationEvent {
     pub action: String,
     pub installation: Installation,
     pub sender: Actor,
+
+    #[serde(default)]
     pub repositories: Vec<Repository>,
 }
 
@@ -79,7 +81,7 @@ pub struct Installation {
     pub account: Actor,
     pub app_id: i64,
 
-    #[serde(skip)]
+    #[serde(default)]
     pub repositories: Vec<Repository>,
 }
 
