@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use eyre::Result;
 
+use crate::config;
 use crate::github::GitHubInterface;
 use crate::helpers::comments::CommentHeader;
 use crate::helpers::pulls::{self, ConflictType};
@@ -32,14 +33,18 @@ where
 
     /// The cache with pull requests and their diffs.
     memory: memory::Memory,
+
+    /// Controller-specific settings taken from `config.yaml`.
+    config: config::Controller,
 }
 
 impl<T: GitHubInterface> Controller<T> {
-    pub fn new(app_id: String, private_key: String) -> Self {
+    pub fn new(app_id: String, private_key: String, config: config::Controller) -> Self {
         Self {
             app: None,
             github: T::new(app_id, private_key),
             memory: memory::Memory::new(),
+            config,
         }
     }
 
@@ -244,32 +249,53 @@ impl<T: GitHubInterface> Controller<T> {
             for u in updates {
                 let key = (u.original, u.kind.clone());
                 if let Some(existing_comment) = pull_references.get(&key) {
-                    if let Err(e) = self
-                        .github
-                        .update_comment(full_repo_name, existing_comment.id, u.to_markdown())
-                        .await
-                    {
-                        log::error!(
-                            "Failed to update comment #{} in pull request {}/#{} (about #{}): {:?}",
+                    if self.config.post_comments {
+                        if let Err(e) = self
+                            .github
+                            .update_comment(full_repo_name, existing_comment.id, u.to_markdown())
+                            .await
+                        {
+                            log::error!(
+                                "Failed to update comment #{} in pull request {}/#{} (about #{}): {:?}",
+                                existing_comment.id,
+                                full_repo_name,
+                                key.0,
+                                target,
+                                e
+                            );
+                        }
+                    } else {
+                        log::debug!(
+                            "Would update a comment #{} in pull request {}/#{} (about #{})",
                             existing_comment.id,
                             full_repo_name,
                             key.0,
-                            target,
-                            e
+                            target
                         );
                     }
-                } else if let Err(e) = self
-                    .github
-                    .post_comment(full_repo_name, target, u.to_markdown())
-                    .await
-                {
-                    log::error!(
-                        "Failed to post a NEW comment in pull request {}/#{} (about #{}): {:?}",
-                        full_repo_name,
-                        key.0,
-                        target,
-                        e
-                    );
+                } else {
+                    if self.config.post_comments {
+                        if let Err(e) = self
+                            .github
+                            .post_comment(full_repo_name, target, u.to_markdown())
+                            .await
+                        {
+                            log::error!(
+                                "Failed to post a NEW comment in pull request {}/#{} (about #{}): {:?}",
+                                full_repo_name,
+                                key.0,
+                                target,
+                                e
+                            );
+                        }
+                    } else {
+                        log::debug!(
+                            "Would post a new comment in pull request {}/#{} (about #{})",
+                            full_repo_name,
+                            key.0,
+                            target
+                        );
+                    }
                 }
             }
         }

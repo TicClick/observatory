@@ -4,8 +4,13 @@ use crate::helpers::pulls::Conflict;
 use crate::test::{self, pull_link};
 
 async fn make_controller(init: bool) -> Controller<test::DummyGitHubClient> {
-    let mut c =
-        Controller::<test::DummyGitHubClient>::new("123".to_string(), "private-key".to_string());
+    let mut c = Controller::<test::DummyGitHubClient>::new(
+        "123".to_string(),
+        "private-key".to_string(),
+        crate::config::Controller {
+            post_comments: true,
+        },
+    );
     if init {
         c.init().await.unwrap();
     }

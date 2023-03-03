@@ -128,8 +128,11 @@ async fn main() -> Result<()> {
     let webhook_secret = settings.github.webhook_secret;
 
     let validator = RequestValidator::new(webhook_secret);
-    let mut controller =
-        controller::Controller::<github::Client>::new(settings.github.app_id, private_key);
+    let mut controller = controller::Controller::<github::Client>::new(
+        settings.github.app_id,
+        private_key,
+        settings.controller.clone(),
+    );
     controller.init().await?;
     log::info!("Active installations: {:?}", controller.installations());
     log::debug!("GitHub App: {:?}", controller.app);

@@ -25,3 +25,7 @@ logging:
   # Path to the log file. For logging to STDERR, use -
   file: "-"
   level: debug
+
+controller:
+  # Create comments with notifications about pull conflicts.
+  post_comments: true

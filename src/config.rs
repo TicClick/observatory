@@ -10,11 +10,12 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_FILE_NAME: &str = "config.yaml";
 pub const STDERR_LOG_FILE: &str = "-";
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Config {
     pub server: Server,
     pub logging: Logging,
     pub github: GitHub,
+    pub controller: Controller,
 }
 
 impl Config {
@@ -25,14 +26,14 @@ impl Config {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Server {
     pub bind_ip: Ipv4Addr,
     pub port: u16,
     pub events_endpoint: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Logging {
     pub file: String,
 
@@ -40,11 +41,16 @@ pub struct Logging {
     pub level: log::LevelFilter,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct GitHub {
     pub app_id: String,
     pub app_key_path: String,
     pub webhook_secret: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct Controller {
+    pub post_comments: bool,
 }
 
 // Unfortunate copypaste: https://serde.rs/remote-derive.html
@@ -86,6 +92,9 @@ mod tests {
                 app_id: "123456".to_string(),
                 app_key_path: "./private-key.pem".to_string(),
                 webhook_secret: "iseedeadpeople".to_string(),
+            },
+            controller: Controller {
+                post_comments: true,
             },
         };
         assert_eq!(settings, template);
