@@ -7,6 +7,10 @@
 2. open its GitHub Store page[^1] and install it on a selected repository.
 3. list of events sent to the app is available on `https://github.com/settings/apps/{app name}/advanced`.
 
+## nginx setup
+
+see `dev/example.nginx` to avoid being a web framework canary
+
 ## port forwarding
 
 (this can probably be boiled down to just a single `ssh` command, but I'm not very good at juggling `-L`s and `-R`s)
