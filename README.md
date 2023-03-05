@@ -2,12 +2,9 @@
 
 ## features
 
-### conflict detection
-
-  - overlapping changes (same files edited)
-  - someone edits an original article while its translation is still open
-  - someone opens a translation and there's an existing, possibly unknown edit of the original article
+  - detect overlapping changes (same `.md` files edited)
+  - detect original change and a translation existing at the same time
 
 ## testing
 
-see [`TESTING.md`](TESTING.md).
+see [`TESTING.md`](TESTING.md)
