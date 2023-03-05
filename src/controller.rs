@@ -128,7 +128,6 @@ impl<T: GitHubInterface> Controller<T> {
         new_pull.diff = Some(diff);
         self.memory.insert_pull(full_repo_name, new_pull.clone());
 
-        let mut pending_updates: HashMap<i32, Vec<conflicts::Conflict>> = HashMap::new();
         if let Some(pulls_map) = self.memory.pulls(full_repo_name) {
             let mut pulls: Vec<structs::PullRequest> = pulls_map
                 .into_values()
@@ -139,24 +138,23 @@ impl<T: GitHubInterface> Controller<T> {
             // Compare the new pull with existing for conflicts.
             // Known conflicts are skipped (same kind + same file set), otherwise memory is updated.
 
+            let mut pending_updates: HashMap<i32, Vec<conflicts::Conflict>> = HashMap::new();
             for other_pull in pulls {
                 let conflicts = conflicts::compare_pulls(&new_pull, &other_pull);
                 for conflict in conflicts {
-                    let update_needed = self.conflicts.upsert(full_repo_name, &conflict);
-                    if update_needed {
+                    if let Some(updated_conflict) = self.conflicts.upsert(full_repo_name, &conflict)
+                    {
                         pending_updates
-                            .entry(conflict.trigger)
+                            .entry(updated_conflict.trigger)
                             .or_default()
-                            .push(conflict.clone());
+                            .push(updated_conflict);
                     }
                 }
             }
+            if trigger_updates {
+                self.send_updates(pending_updates, full_repo_name).await?;
+            }
         }
-
-        if !trigger_updates {
-            return Ok(());
-        }
-        self.send_updates(pending_updates, full_repo_name).await?;
         Ok(())
     }
 

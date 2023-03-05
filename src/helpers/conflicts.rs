@@ -249,20 +249,20 @@ pub struct Storage {
 }
 
 impl Storage {
-    pub fn upsert(&self, full_repo_name: &str, c: &Conflict) -> bool {
+    pub fn upsert(&self, full_repo_name: &str, c: &Conflict) -> Option<Conflict> {
         let mut all_conflicts = self.map.lock().unwrap();
         let repo_conflicts = all_conflicts.entry(full_repo_name.to_string()).or_default();
         if !repo_conflicts.contains_key(&c.key()) {
             repo_conflicts.insert(c.key(), c.clone());
-            return true;
+            return Some(c.clone());
         }
 
         let entry = repo_conflicts.get_mut(&c.key()).unwrap();
         if entry == c {
-            false
+            None
         } else {
             entry.file_set = c.file_set.clone();
-            true
+            Some(entry.clone())
         }
     }
 
