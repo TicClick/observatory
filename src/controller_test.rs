@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::helpers::pulls::Conflict;
+use crate::helpers::conflicts::Conflict;
 use crate::test::{self, pull_link};
 
 async fn make_controller(init: bool) -> Controller<test::DummyGitHubClient> {
@@ -60,9 +60,9 @@ async fn test_simple_existing_change() {
         c.add_pull("test/repo", p, false).await.unwrap();
     }
 
-    assert!(c.memory.conflicts("test/repo").get(&1).is_none());
+    assert!(c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&2).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 2),
         &vec![Conflict::existing_change(
             2,
             1,
@@ -84,7 +84,7 @@ async fn test_simple_new_original_change() {
     }
 
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&1).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 1),
         &vec![Conflict::new_original_change(
             1,
             2,
@@ -92,7 +92,7 @@ async fn test_simple_new_original_change() {
             vec!["wiki/Article/en.md".to_string()]
         )]
     );
-    assert!(c.memory.conflicts("test/repo").get(&2).is_none());
+    assert!(c.conflicts.by_trigger("test/repo", 2).is_empty());
 }
 
 #[tokio::test]
@@ -106,14 +106,14 @@ async fn test_simple_existing_original_change() {
         c.add_pull("test/repo", p, false).await.unwrap();
     }
 
-    assert!(c.memory.conflicts("test/repo").get(&1).is_none());
+    assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&2).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 2),
         &vec![Conflict::existing_original_change(
             2,
             1,
             pull_link("test/repo", 1),
-            vec!["wiki/Article/ru.md".to_string()],
+            vec!["wiki/Article/ru.md".to_string()]
         )]
     );
 }
@@ -140,20 +140,20 @@ async fn test_existing_change_multiple_conflicts() {
         )
     };
 
-    assert!(c.memory.conflicts("test/repo").get(&1).is_none());
+    assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&2).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 2),
         &vec![existing_change_conflict(2, 1)]
     );
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&3).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 3),
         &vec![
             existing_change_conflict(3, 1),
             existing_change_conflict(3, 2),
         ]
     );
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&4).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 4),
         &vec![
             existing_change_conflict(4, 1),
             existing_change_conflict(4, 2),
@@ -185,18 +185,18 @@ async fn test_new_original_change_multiple_conflicts() {
     };
 
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&1).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 1),
         &vec![new_original_change_conflict(1, 4)]
     );
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&2).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 2),
         &vec![new_original_change_conflict(2, 4)]
     );
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&3).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 3),
         &vec![new_original_change_conflict(3, 4)]
     );
-    assert!(c.memory.conflicts("test/repo").get(&4).is_none());
+    assert!(&c.conflicts.by_trigger("test/repo", 4).is_empty());
 }
 
 #[tokio::test]
@@ -221,17 +221,17 @@ async fn test_existing_original_change_multiple_conflicts() {
         )
     };
 
-    assert!(c.memory.conflicts("test/repo").get(&1).is_none());
+    assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&2).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 2),
         &vec![existing_original_change_conflict(2, 1, "ru")]
     );
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&3).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 3),
         &vec![existing_original_change_conflict(3, 1, "jp")]
     );
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&4).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 4),
         &vec![existing_original_change_conflict(4, 1, "ko")]
     );
 }
@@ -256,9 +256,9 @@ async fn test_existing_change_conflict_update_no_extra_files() {
         .await
         .unwrap();
 
-    assert!(c.memory.conflicts("test/repo").get(&1).is_none());
+    assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&2).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 2),
         &vec![Conflict::existing_change(
             2,
             1,
@@ -291,9 +291,9 @@ async fn test_existing_change_conflict_update_recognized() {
         .await
         .unwrap();
 
-    assert!(c.memory.conflicts("test/repo").get(&1).is_none());
+    assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&2).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 2),
         &vec![Conflict::existing_change(
             2,
             1,
@@ -340,9 +340,9 @@ async fn test_existing_change_conflict_double_update() {
         .await
         .unwrap();
 
-    assert!(c.memory.conflicts("test/repo").get(&1).is_none());
+    assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&2).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 2),
         &vec![Conflict::existing_change(
             2,
             1,
@@ -381,9 +381,9 @@ async fn test_new_original_change_conflict_update_no_extra_files() {
         .await
         .unwrap();
 
-    assert!(c.memory.conflicts("test/repo").get(&2).is_none());
+    assert!(&c.conflicts.by_trigger("test/repo", 2).is_empty());
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&1).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 1),
         &vec![Conflict::new_original_change(
             1,
             2,
@@ -422,9 +422,9 @@ async fn test_new_original_change_conflict_update_recognized() {
         .await
         .unwrap();
 
-    assert!(c.memory.conflicts("test/repo").get(&2).is_none());
+    assert!(&c.conflicts.by_trigger("test/repo", 2).is_empty());
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&1).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 1),
         &vec![Conflict::new_original_change(
             1,
             2,
@@ -471,9 +471,9 @@ async fn test_new_original_change_conflict_double_update() {
         .await
         .unwrap();
 
-    assert!(c.memory.conflicts("test/repo").get(&2).is_none());
+    assert!(&c.conflicts.by_trigger("test/repo", 2).is_empty());
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&1).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 1),
         &vec![Conflict::new_original_change(
             1,
             2,
@@ -512,9 +512,9 @@ async fn test_existing_original_change_conflict_update_no_extra_files() {
         .await
         .unwrap();
 
-    assert!(c.memory.conflicts("test/repo").get(&1).is_none());
+    assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&2).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 2),
         &vec![Conflict::existing_original_change(
             2,
             1,
@@ -553,9 +553,9 @@ async fn test_existing_original_change_conflict_update_recognized() {
         .await
         .unwrap();
 
-    assert!(c.memory.conflicts("test/repo").get(&1).is_none());
+    assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&2).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 2),
         &vec![Conflict::existing_original_change(
             2,
             1,
@@ -597,7 +597,7 @@ async fn test_three_conflicts_at_once() {
     }
 
     assert_eq!(
-        c.memory.conflicts("test/repo").get(&3).unwrap(),
+        &c.conflicts.by_trigger("test/repo", 3),
         &vec![
             Conflict::existing_original_change(
                 3,
@@ -921,7 +921,7 @@ async fn test_closed_pull_conflicts_removed() {
     }
 
     c.remove_pull("test/repo", c.github.fetch_pull("test/repo", 3));
-    assert!(c.memory.conflicts("test/repo").get(&3).is_none());
+    assert!(&c.conflicts.by_trigger("test/repo", 3).is_empty());
 }
 
 #[tokio::test]
@@ -945,13 +945,7 @@ async fn test_closed_pull_related_conflicts_removed() {
 
     c.remove_pull("test/repo", c.github.fetch_pull("test/repo", 1));
     for p in pulls.iter().skip(1) {
-        let conflicts = c.memory.conflicts("test/repo");
-        let related_conflicts: Vec<_> = conflicts
-            .get(&p.number)
-            .unwrap()
-            .iter()
-            .filter(|c| c.original == p.number || c.trigger == p.number)
-            .collect();
-        assert!(related_conflicts.is_empty());
+        assert!(c.conflicts.by_original("test/repo", p.number).is_empty());
+        assert!(c.conflicts.by_trigger("test/repo", p.number).is_empty());
     }
 }

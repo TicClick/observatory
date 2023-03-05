@@ -1,5 +1,7 @@
 /// `pulls` contains structures and helpers for detecting conflicts between two pull requests.
 use std::cmp::{PartialEq, PartialOrd};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
@@ -250,6 +252,62 @@ pub fn compare_pulls(
     out
 }
 
+type ConflictKey = (i32, i32, ConflictType);
+impl Conflict {
+    pub fn key(&self) -> ConflictKey {
+        (
+            std::cmp::min(self.original, self.trigger),
+            std::cmp::max(self.original, self.trigger),
+            self.kind.clone(),
+        )
+    }
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct Storage {
+    map: Arc<Mutex<HashMap<String, HashMap<ConflictKey, Conflict>>>>,
+}
+
+impl Storage {
+    pub fn upsert(&self, full_repo_name: &str, c: &Conflict) -> bool {
+        let mut all_conflicts = self.map.lock().unwrap();
+        let repo_conflicts = all_conflicts.entry(full_repo_name.to_string()).or_default();
+        let entry = repo_conflicts.entry(c.key()).or_insert(c.clone());
+        if entry == c {
+            false
+        } else {
+            entry.file_set = c.file_set.clone();
+            true
+        }
+    }
+
+    fn select_conflicts<F>(&self, full_repo_name: &str, predicate: F) -> Vec<Conflict>
+    where
+        F: Fn(&Conflict) -> bool,
+    {
+        match self.map.lock().unwrap().get(full_repo_name) {
+            None => Vec::new(),
+            Some(m) => {
+                let mut conflicts: Vec<_> = m
+                    .values()
+                    .filter(|c| predicate(c))
+                    .map(|c| c.clone())
+                    .collect();
+                conflicts.sort();
+                conflicts
+            }
+        }
+    }
+
+    pub fn by_original(&self, full_repo_name: &str, pull_number: i32) -> Vec<Conflict> {
+        self.select_conflicts(full_repo_name, |c| c.original == pull_number)
+    }
+
+    pub fn by_trigger(&self, full_repo_name: &str, pull_number: i32) -> Vec<Conflict> {
+        self.select_conflicts(full_repo_name, |c| c.trigger == pull_number)
+    }
+}
+
 #[cfg(test)]
-#[path = "pulls_test.rs"]
-pub(crate) mod tests;
+#[path = "conflicts_test.rs"]
+pub(crate) mod conflicts_test;

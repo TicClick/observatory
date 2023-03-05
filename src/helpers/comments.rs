@@ -2,7 +2,7 @@
 /// as well as comment templates.
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::pulls::ConflictType;
+use crate::helpers::conflicts::ConflictType;
 use crate::helpers::ToMarkdown;
 
 /// Warn the author of a new pull request about someone else's unmerged work.

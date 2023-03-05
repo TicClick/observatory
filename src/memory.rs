@@ -3,30 +3,17 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::helpers::pulls::Conflict;
 use crate::structs::*;
 
 /// The two-level pull request storage (repository -> pull number -> pull object)
 #[derive(Default, Debug, Clone)]
 pub struct Memory {
     pub pulls: Arc<Mutex<HashMap<String, HashMap<i32, PullRequest>>>>,
-    pub conflicts: Arc<Mutex<HashMap<String, HashMap<i32, Vec<Conflict>>>>>,
 }
 
 impl Memory {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub fn add_conflicts(&self, full_repo_name: &str, pull_number: i32, conflicts: Vec<Conflict>) {
-        self.conflicts
-            .lock()
-            .unwrap()
-            .entry(full_repo_name.to_string())
-            .or_default()
-            .entry(pull_number)
-            .or_default()
-            .extend(conflicts)
     }
 
     pub fn insert_pull(&self, full_repo_name: &str, new_pull: PullRequest) {
@@ -49,20 +36,6 @@ impl Memory {
         if let Some(pulls) = self.pulls.lock().unwrap().get_mut(full_repo_name) {
             pulls.remove(&p.number);
         }
-        if let Some(all_conflicts) = self.conflicts.lock().unwrap().get_mut(full_repo_name) {
-            all_conflicts.remove(&p.number);
-            for conflicts in all_conflicts.values_mut() {
-                // Copied from the `Vec::drain_filter` docstring since the feature itself is unstable.
-                let mut i = 0;
-                while i < conflicts.len() {
-                    if conflicts[i].original == p.number || conflicts[i].trigger == p.number {
-                        conflicts.remove(i);
-                    } else {
-                        i += 1;
-                    }
-                }
-            }
-        }
     }
 
     pub fn pulls(&self, full_repo_name: &str) -> Option<HashMap<i32, PullRequest>> {
@@ -73,31 +46,8 @@ impl Memory {
             .map(|m| m.clone())
     }
 
-    pub fn conflicts(&self, full_repo_name: &str) -> HashMap<i32, Vec<Conflict>> {
-        match self
-            .conflicts
-            .lock()
-            .unwrap()
-            .get(&full_repo_name.to_string())
-        {
-            Some(cc) => cc.clone(),
-            None => HashMap::new(),
-        }
-    }
-
-    pub fn replace_conflicts(&self, full_repo_name: &str, conflicts: HashMap<i32, Vec<Conflict>>) {
-        self.conflicts
-            .lock()
-            .unwrap()
-            .insert(full_repo_name.to_string(), conflicts);
-    }
-
     pub fn drop_repository(&self, full_repo_name: &str) {
         self.pulls
-            .lock()
-            .unwrap()
-            .remove(&full_repo_name.to_string());
-        self.conflicts
             .lock()
             .unwrap()
             .remove(&full_repo_name.to_string());
