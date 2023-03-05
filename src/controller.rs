@@ -211,29 +211,27 @@ impl<T: GitHubInterface> Controller<T> {
                             target
                         );
                     }
-                } else {
-                    if self.config.post_comments {
-                        if let Err(e) = self
-                            .github
-                            .post_comment(full_repo_name, target, u.to_markdown())
-                            .await
-                        {
-                            log::error!(
-                                "Failed to post a NEW comment in pull request {}/#{} (about #{}): {:?}",
-                                full_repo_name,
-                                key.0,
-                                target,
-                                e
-                            );
-                        }
-                    } else {
-                        log::debug!(
-                            "Would post a new comment in pull request {}/#{} (about #{})",
+                } else if self.config.post_comments {
+                    if let Err(e) = self
+                        .github
+                        .post_comment(full_repo_name, target, u.to_markdown())
+                        .await
+                    {
+                        log::error!(
+                            "Failed to post a NEW comment in pull request {}/#{} (about #{}): {:?}",
                             full_repo_name,
                             key.0,
-                            target
+                            target,
+                            e
                         );
                     }
+                } else {
+                    log::debug!(
+                        "Would post a new comment in pull request {}/#{} (about #{})",
+                        full_repo_name,
+                        key.0,
+                        target
+                    );
                 }
             }
         }

@@ -1,6 +1,6 @@
 /// `pulls` contains structures and helpers for detecting conflicts between two pull requests.
 use std::cmp::{PartialEq, PartialOrd};
-use std::collections::HashMap;
+use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -252,17 +252,20 @@ impl Storage {
     pub fn upsert(&self, full_repo_name: &str, c: &Conflict) -> Option<Conflict> {
         let mut all_conflicts = self.map.lock().unwrap();
         let repo_conflicts = all_conflicts.entry(full_repo_name.to_string()).or_default();
-        if !repo_conflicts.contains_key(&c.key()) {
-            repo_conflicts.insert(c.key(), c.clone());
-            return Some(c.clone());
-        }
-
-        let entry = repo_conflicts.get_mut(&c.key()).unwrap();
-        if entry == c {
-            None
-        } else {
-            entry.file_set = c.file_set.clone();
-            Some(entry.clone())
+        match repo_conflicts.entry(c.key()) {
+            Entry::Vacant(e) => {
+                e.insert(c.clone());
+                Some(c.clone())
+            }
+            Entry::Occupied(mut e) => {
+                let existing_conflict = e.get_mut();
+                if existing_conflict == c {
+                    None
+                } else {
+                    existing_conflict.file_set = c.file_set.clone();
+                    Some(existing_conflict.clone())
+                }
+            }
         }
     }
 
@@ -273,11 +276,7 @@ impl Storage {
         match self.map.lock().unwrap().get(full_repo_name) {
             None => Vec::new(),
             Some(m) => {
-                let mut conflicts: Vec<_> = m
-                    .values()
-                    .filter(|c| predicate(c))
-                    .map(|c| c.clone())
-                    .collect();
+                let mut conflicts: Vec<_> = m.values().filter(|c| predicate(c)).cloned().collect();
                 conflicts.sort();
                 conflicts
             }

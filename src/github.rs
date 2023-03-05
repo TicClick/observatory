@@ -427,7 +427,7 @@ impl GitHubInterface for Client {
         self.installations
             .lock()
             .unwrap()
-            .insert(installation.id, installation.clone());
+            .insert(installation.id, installation);
     }
 
     // TODO: confirm that this is actually needed (see similar stuff below)

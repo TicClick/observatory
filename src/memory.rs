@@ -43,7 +43,7 @@ impl Memory {
             .lock()
             .unwrap()
             .get(&full_repo_name.to_string())
-            .map(|m| m.clone())
+            .cloned()
     }
 
     pub fn drop_repository(&self, full_repo_name: &str) {
