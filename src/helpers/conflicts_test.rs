@@ -4,7 +4,7 @@ use crate::test::{self, pull_link};
 
 #[test]
 fn conflict_to_markdown() {
-    let c1 = Conflict::existing_change(
+    let c1 = Conflict::overlap(
         1,
         2,
         pull_link("test/repo", 2),
@@ -15,18 +15,18 @@ fn conflict_to_markdown() {
         format!(
             r#"<!--
 pull_number: 2
-conflict_type: ExistingChange
+conflict_type: Overlap
 -->
 {}
 - https://github.com/test/repo/pull/2, files:
   ```
   wiki/Ranking_criteria/en.md
   ```"#,
-            comments::EXISTING_CHANGE_TEMPLATE
+            comments::OVERLAP_TEMPLATE
         )
     );
 
-    let c2 = Conflict::new_original_change(
+    let c2 = Conflict::incomplete_translation(
         2,
         3,
         pull_link("test/repo", 3),
@@ -37,11 +37,11 @@ conflict_type: ExistingChange
         format!(
             r#"<!--
 pull_number: 3
-conflict_type: NewOriginalChange
+conflict_type: IncompleteTranslation
 -->
 {}
 - https://github.com/test/repo/pull/3 (>10 files)"#,
-            comments::NEW_ORIGINAL_CHANGE_TEMPLATE
+            comments::INCOMPLETE_TRANSLATION_TEMPLATE
         )
     );
 }
@@ -80,13 +80,13 @@ fn no_markdown_no_conflict() {
 }
 
 #[test]
-fn single_file_existing_change() {
+fn single_file_overlap() {
     let existing_pull = test::make_pull(1, &["wiki/Article/en.md"]);
     let new_pull = test::make_pull(2, &["wiki/Article/en.md"]);
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
-        vec![Conflict::existing_change(
+        vec![Conflict::overlap(
             2,
             1,
             pull_link("test/repo", 1),
@@ -96,7 +96,7 @@ fn single_file_existing_change() {
 }
 
 #[test]
-fn multiple_files_existing_change() {
+fn multiple_files_overlap() {
     let existing_pull = test::make_pull(
         1,
         &[
@@ -118,7 +118,7 @@ fn multiple_files_existing_change() {
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
-        vec![Conflict::existing_change(
+        vec![Conflict::overlap(
             2,
             1,
             pull_link("test/repo", 1),
@@ -130,7 +130,7 @@ fn multiple_files_existing_change() {
     );
     assert_eq!(
         compare_pulls(&existing_pull, &new_pull),
-        vec![Conflict::existing_change(
+        vec![Conflict::overlap(
             1,
             2,
             pull_link("test/repo", 2),
@@ -143,13 +143,13 @@ fn multiple_files_existing_change() {
 }
 
 #[test]
-fn existing_translation_new_original_change() {
+fn existing_translation_becomes_incomplete() {
     let existing_pull = test::make_pull(1, &["wiki/Article/ru.md"]);
     let new_pull = test::make_pull(2, &["wiki/Article/en.md"]);
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
-        vec![Conflict::new_original_change(
+        vec![Conflict::incomplete_translation(
             1,
             2,
             pull_link("test/repo", 2),
@@ -159,17 +159,17 @@ fn existing_translation_new_original_change() {
 }
 
 #[test]
-fn new_translation_existing_original_change() {
+fn new_translation_marked_as_incomplete() {
     let existing_pull = test::make_pull(1, &["wiki/Article/en.md"]);
     let new_pull = test::make_pull(2, &["wiki/Article/ru.md"]);
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
-        vec![Conflict::existing_original_change(
+        vec![Conflict::incomplete_translation(
             2,
             1,
             pull_link("test/repo", 1),
-            vec!["wiki/Article/ru.md".to_string(),],
+            vec!["wiki/Article/en.md".to_string(),],
         )]
     );
 }

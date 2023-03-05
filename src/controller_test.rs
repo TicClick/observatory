@@ -50,7 +50,7 @@ async fn test_add_pull() {
 }
 
 #[tokio::test]
-async fn test_simple_existing_change() {
+async fn test_simple_overlap_originals() {
     let c = make_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
@@ -63,7 +63,7 @@ async fn test_simple_existing_change() {
     assert!(c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 2),
-        &vec![Conflict::existing_change(
+        &vec![Conflict::overlap(
             2,
             1,
             pull_link("test/repo", 1),
@@ -73,7 +73,45 @@ async fn test_simple_existing_change() {
 }
 
 #[tokio::test]
-async fn test_simple_new_original_change() {
+async fn test_simple_overlap_translations() {
+    let c = make_controller(true).await;
+    let pulls = [
+        c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
+        c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
+    ];
+    for p in pulls {
+        c.add_pull("test/repo", p, false).await.unwrap();
+    }
+
+    assert!(c.conflicts.by_trigger("test/repo", 1).is_empty());
+    assert_eq!(
+        &c.conflicts.by_trigger("test/repo", 2),
+        &vec![Conflict::overlap(
+            2,
+            1,
+            pull_link("test/repo", 1),
+            vec!["wiki/Article/ru.md".to_string()]
+        )]
+    );
+}
+
+#[tokio::test]
+async fn test_different_translations_do_not_overlap() {
+    let c = make_controller(true).await;
+    let pulls = [
+        c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
+        c.github.test_add_pull("test/repo", &["wiki/Article/ko.md"]),
+    ];
+    for p in pulls {
+        c.add_pull("test/repo", p, false).await.unwrap();
+    }
+
+    assert!(c.conflicts.by_trigger("test/repo", 1).is_empty());
+    assert!(c.conflicts.by_trigger("test/repo", 2).is_empty());
+}
+
+#[tokio::test]
+async fn test_simple_early_incomplete_translation() {
     let c = make_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
@@ -85,7 +123,7 @@ async fn test_simple_new_original_change() {
 
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 1),
-        &vec![Conflict::new_original_change(
+        &vec![Conflict::incomplete_translation(
             1,
             2,
             pull_link("test/repo", 2),
@@ -96,7 +134,7 @@ async fn test_simple_new_original_change() {
 }
 
 #[tokio::test]
-async fn test_simple_existing_original_change() {
+async fn test_simple_late_incomplete_translation() {
     let c = make_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
@@ -109,17 +147,17 @@ async fn test_simple_existing_original_change() {
     assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 2),
-        &vec![Conflict::existing_original_change(
+        &vec![Conflict::incomplete_translation(
             2,
             1,
             pull_link("test/repo", 1),
-            vec!["wiki/Article/ru.md".to_string()]
+            vec!["wiki/Article/en.md".to_string()]
         )]
     );
 }
 
 #[tokio::test]
-async fn test_existing_change_multiple_conflicts() {
+async fn test_multiple_overlapping_changes() {
     let c = make_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
@@ -131,8 +169,8 @@ async fn test_existing_change_multiple_conflicts() {
         c.add_pull("test/repo", p, false).await.unwrap();
     }
 
-    let existing_change_conflict = |trigger, original| {
-        Conflict::existing_change(
+    let overlap = |trigger, original| {
+        Conflict::overlap(
             trigger,
             original,
             pull_link("test/repo", original),
@@ -143,27 +181,20 @@ async fn test_existing_change_multiple_conflicts() {
     assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 2),
-        &vec![existing_change_conflict(2, 1)]
+        &vec![overlap(2, 1)]
     );
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 3),
-        &vec![
-            existing_change_conflict(3, 1),
-            existing_change_conflict(3, 2),
-        ]
+        &vec![overlap(3, 1), overlap(3, 2),]
     );
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 4),
-        &vec![
-            existing_change_conflict(4, 1),
-            existing_change_conflict(4, 2),
-            existing_change_conflict(4, 3),
-        ]
+        &vec![overlap(4, 1), overlap(4, 2), overlap(4, 3),]
     );
 }
 
 #[tokio::test]
-async fn test_new_original_change_multiple_conflicts() {
+async fn test_multiple_incomplete_translations() {
     let c = make_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
@@ -175,8 +206,8 @@ async fn test_new_original_change_multiple_conflicts() {
         c.add_pull("test/repo", p, false).await.unwrap();
     }
 
-    let new_original_change_conflict = |trigger, original| {
-        Conflict::new_original_change(
+    let incomplete_translation = |trigger, original| {
+        Conflict::incomplete_translation(
             trigger,
             original,
             pull_link("test/repo", original),
@@ -186,21 +217,21 @@ async fn test_new_original_change_multiple_conflicts() {
 
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 1),
-        &vec![new_original_change_conflict(1, 4)]
+        &vec![incomplete_translation(1, 4)]
     );
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 2),
-        &vec![new_original_change_conflict(2, 4)]
+        &vec![incomplete_translation(2, 4)]
     );
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 3),
-        &vec![new_original_change_conflict(3, 4)]
+        &vec![incomplete_translation(3, 4)]
     );
     assert!(&c.conflicts.by_trigger("test/repo", 4).is_empty());
 }
 
 #[tokio::test]
-async fn test_existing_original_change_multiple_conflicts() {
+async fn test_incomplete_translation_multiple_conflicts() {
     let c = make_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
@@ -212,32 +243,32 @@ async fn test_existing_original_change_multiple_conflicts() {
         c.add_pull("test/repo", p, false).await.unwrap();
     }
 
-    let existing_original_change_conflict = |trigger, original, language| {
-        Conflict::existing_original_change(
+    let incomplete_translation_conflict = |trigger, original| {
+        Conflict::incomplete_translation(
             trigger,
             original,
             pull_link("test/repo", original),
-            vec![format!("wiki/Article/{}.md", language)],
+            vec![format!("wiki/Article/en.md")],
         )
     };
 
     assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 2),
-        &vec![existing_original_change_conflict(2, 1, "ru")]
+        &vec![incomplete_translation_conflict(2, 1)]
     );
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 3),
-        &vec![existing_original_change_conflict(3, 1, "jp")]
+        &vec![incomplete_translation_conflict(3, 1)]
     );
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 4),
-        &vec![existing_original_change_conflict(4, 1, "ko")]
+        &vec![incomplete_translation_conflict(4, 1)]
     );
 }
 
 #[tokio::test]
-async fn test_existing_change_conflict_update_no_extra_files() {
+async fn test_overlap_no_extra_files_on_update() {
     let c = make_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
@@ -259,7 +290,7 @@ async fn test_existing_change_conflict_update_no_extra_files() {
     assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 2),
-        &vec![Conflict::existing_change(
+        &vec![Conflict::overlap(
             2,
             1,
             pull_link("test/repo", 1),
@@ -269,7 +300,7 @@ async fn test_existing_change_conflict_update_no_extra_files() {
 }
 
 #[tokio::test]
-async fn test_existing_change_conflict_update_recognized() {
+async fn test_overlap_file_set_update_in_trigger_recognized() {
     let c = make_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
@@ -294,7 +325,7 @@ async fn test_existing_change_conflict_update_recognized() {
     assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 2),
-        &vec![Conflict::existing_change(
+        &vec![Conflict::overlap(
             2,
             1,
             pull_link("test/repo", 1),
@@ -307,7 +338,7 @@ async fn test_existing_change_conflict_update_recognized() {
 }
 
 #[tokio::test]
-async fn test_existing_change_conflict_double_update() {
+async fn test_overlap_double_update_recognized() {
     let c = make_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
@@ -343,7 +374,7 @@ async fn test_existing_change_conflict_double_update() {
     assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 2),
-        &vec![Conflict::existing_change(
+        &vec![Conflict::overlap(
             2,
             1,
             pull_link("test/repo", 1),
@@ -356,7 +387,7 @@ async fn test_existing_change_conflict_double_update() {
 }
 
 #[tokio::test]
-async fn test_new_original_change_conflict_update_no_extra_files() {
+async fn test_early_incomplete_translation_update_no_unrelated_files() {
     let c = make_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
@@ -384,7 +415,7 @@ async fn test_new_original_change_conflict_update_no_extra_files() {
     assert!(&c.conflicts.by_trigger("test/repo", 2).is_empty());
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 1),
-        &vec![Conflict::new_original_change(
+        &vec![Conflict::incomplete_translation(
             1,
             2,
             pull_link("test/repo", 2),
@@ -394,7 +425,7 @@ async fn test_new_original_change_conflict_update_no_extra_files() {
 }
 
 #[tokio::test]
-async fn test_new_original_change_conflict_update_recognized() {
+async fn test_incomplete_translation_original_update_recognized() {
     let c = make_controller(true).await;
     let pulls = [
         c.github.test_add_pull(
@@ -425,7 +456,7 @@ async fn test_new_original_change_conflict_update_recognized() {
     assert!(&c.conflicts.by_trigger("test/repo", 2).is_empty());
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 1),
-        &vec![Conflict::new_original_change(
+        &vec![Conflict::incomplete_translation(
             1,
             2,
             pull_link("test/repo", 2),
@@ -438,7 +469,7 @@ async fn test_new_original_change_conflict_update_recognized() {
 }
 
 #[tokio::test]
-async fn test_new_original_change_conflict_double_update() {
+async fn test_incomplete_translation_double_update() {
     let c = make_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
@@ -474,7 +505,7 @@ async fn test_new_original_change_conflict_double_update() {
     assert!(&c.conflicts.by_trigger("test/repo", 2).is_empty());
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 1),
-        &vec![Conflict::new_original_change(
+        &vec![Conflict::incomplete_translation(
             1,
             2,
             pull_link("test/repo", 2),
@@ -487,7 +518,7 @@ async fn test_new_original_change_conflict_double_update() {
 }
 
 #[tokio::test]
-async fn test_existing_original_change_conflict_update_no_extra_files() {
+async fn test_late_incomplete_translation_update_no_extra_files() {
     let c = make_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
@@ -515,7 +546,7 @@ async fn test_existing_original_change_conflict_update_no_extra_files() {
     assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 2),
-        &vec![Conflict::existing_original_change(
+        &vec![Conflict::incomplete_translation(
             2,
             1,
             pull_link("test/repo", 1),
@@ -525,7 +556,7 @@ async fn test_existing_original_change_conflict_update_no_extra_files() {
 }
 
 #[tokio::test]
-async fn test_existing_original_change_conflict_update_recognized() {
+async fn test_incomplete_translation_update_recognized() {
     let c = make_controller(true).await;
     let pulls = [
         c.github.test_add_pull(
@@ -556,13 +587,13 @@ async fn test_existing_original_change_conflict_update_recognized() {
     assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 2),
-        &vec![Conflict::existing_original_change(
+        &vec![Conflict::incomplete_translation(
             2,
             1,
             pull_link("test/repo", 1),
             vec![
-                "wiki/Article/ru.md".to_string(),
-                "wiki/Other_article/ru.md".to_string()
+                "wiki/Article/en.md".to_string(),
+                "wiki/Other_article/en.md".to_string()
             ]
         )]
     );
@@ -599,24 +630,24 @@ async fn test_three_conflicts_at_once() {
     assert_eq!(
         &c.conflicts.by_trigger("test/repo", 3),
         &vec![
-            Conflict::existing_original_change(
-                3,
-                1,
-                pull_link("test/repo", 1),
-                vec!["wiki/Article/ru.md".to_string(),]
-            ),
-            Conflict::existing_change(
+            Conflict::overlap(
                 3,
                 2,
                 pull_link("test/repo", 2),
                 vec!["wiki/Other_article/ru.md".to_string(),]
             ),
-            Conflict::new_original_change(
+            Conflict::incomplete_translation(
+                3,
+                1,
+                pull_link("test/repo", 1),
+                vec!["wiki/Article/en.md".to_string(),]
+            ),
+            Conflict::incomplete_translation(
                 3,
                 4,
                 pull_link("test/repo", 4),
                 vec!["wiki/Different_article/en.md".to_string(),]
-            )
+            ),
         ]
     );
 }
@@ -703,7 +734,7 @@ async fn test_one_conflict_one_valid_header() {
         header,
         CommentHeader {
             pull_number: 1,
-            conflict_type: ConflictType::ExistingChange,
+            conflict_type: ConflictType::Overlap,
         }
     );
 }
@@ -814,7 +845,7 @@ async fn test_one_pull_and_conflict_one_comment_updated() {
         header,
         CommentHeader {
             pull_number: 1,
-            conflict_type: ConflictType::ExistingChange,
+            conflict_type: ConflictType::Overlap,
         }
     );
     assert!(only_comment.contains("wiki/Other_article/en.md"));
@@ -866,19 +897,19 @@ async fn test_post_comment_per_pull_and_conflict_combination() {
     let mut expected = [
         CommentHeader {
             pull_number: 1,
-            conflict_type: ConflictType::ExistingOriginalChange,
+            conflict_type: ConflictType::IncompleteTranslation,
         },
         CommentHeader {
             pull_number: 1,
-            conflict_type: ConflictType::ExistingChange,
+            conflict_type: ConflictType::Overlap,
         },
         CommentHeader {
             pull_number: 2,
-            conflict_type: ConflictType::ExistingChange,
+            conflict_type: ConflictType::Overlap,
         },
         CommentHeader {
             pull_number: 4,
-            conflict_type: ConflictType::NewOriginalChange,
+            conflict_type: ConflictType::IncompleteTranslation,
         },
     ];
     expected.sort();

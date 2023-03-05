@@ -106,6 +106,8 @@ impl<T: GitHubInterface> Controller<T> {
     /// This should be done only when a pull request is closed or merged.
     pub fn remove_pull(&self, full_repo_name: &str, closed_pull: structs::PullRequest) {
         self.memory.remove_pull(full_repo_name, &closed_pull);
+        self.conflicts
+            .remove_conflicts_by_pull(full_repo_name, closed_pull.number);
     }
 
     /// Handle pull request changes. This includes fetching a `.diff` file from another GitHub domain,

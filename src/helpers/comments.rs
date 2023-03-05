@@ -6,13 +6,10 @@ use crate::helpers::conflicts::ConflictType;
 use crate::helpers::ToMarkdown;
 
 /// Warn the author of a new pull request about someone else's unmerged work.
-pub const EXISTING_CHANGE_TEMPLATE: &str = "Someone else has edited same files as you did. Please check their changes in case they conflict with yours:\n";
+pub const OVERLAP_TEMPLATE: &str = "Someone else has edited same files as you did. Please check their changes in case they conflict with yours:\n";
 
 /// Warn the author of an existing translation request about new changes in the original article.
-pub const NEW_ORIGINAL_CHANGE_TEMPLATE: &str = "Some articles might have changes that are missing from your translation. Please update it after they are merged:\n";
-
-/// Warn the author of a new translation request about existing changes in the original article.
-pub const EXISTING_ORIGINAL_CHANGE_TEMPLATE: &str = NEW_ORIGINAL_CHANGE_TEMPLATE;
+pub const INCOMPLETE_TRANSLATION_TEMPLATE: &str = "Some articles might have changes that are missing from your translation. Please update it after they are merged:\n";
 
 pub const HTML_COMMENT_START: &str = "<!--";
 pub const HTML_COMMENT_END: &str = "-->";

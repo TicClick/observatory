@@ -14,23 +14,18 @@ use crate::structs;
 pub enum ConflictType {
     /// Two pull requests have common file(s).
     /// Target = new pull, reference = old pull.
-    ExistingChange,
+    Overlap,
 
     /// A new pull request affects an article for which there's a translation open.
     /// Target = old pull (translation), reference = new pull (original).
-    NewOriginalChange,
-
-    /// There is a new translation of the article that has a pending change.
-    /// Target = new pull (translation), reference = old pull (original).
-    ExistingOriginalChange,
+    IncompleteTranslation,
 }
 
 impl ToMarkdown for ConflictType {
     fn to_markdown(&self) -> String {
         match self {
-            ConflictType::ExistingChange => comments::EXISTING_CHANGE_TEMPLATE,
-            ConflictType::NewOriginalChange => comments::NEW_ORIGINAL_CHANGE_TEMPLATE,
-            ConflictType::ExistingOriginalChange => comments::EXISTING_ORIGINAL_CHANGE_TEMPLATE,
+            ConflictType::Overlap => comments::OVERLAP_TEMPLATE,
+            ConflictType::IncompleteTranslation => comments::INCOMPLETE_TRANSLATION_TEMPLATE,
         }
         .to_string()
     }
@@ -72,42 +67,28 @@ impl Conflict {
             file_set,
         }
     }
-    pub fn existing_change(
+    pub fn overlap(
         trigger: i32,
         original: i32,
         reference_url: String,
         file_set: Vec<String>,
     ) -> Self {
         Self {
-            kind: ConflictType::ExistingChange,
+            kind: ConflictType::Overlap,
             trigger,
             original,
             reference_url,
             file_set,
         }
     }
-    pub fn new_original_change(
+    pub fn incomplete_translation(
         trigger: i32,
         original: i32,
         reference_url: String,
         file_set: Vec<String>,
     ) -> Self {
         Self {
-            kind: ConflictType::NewOriginalChange,
-            trigger,
-            original,
-            reference_url,
-            file_set,
-        }
-    }
-    pub fn existing_original_change(
-        trigger: i32,
-        original: i32,
-        reference_url: String,
-        file_set: Vec<String>,
-    ) -> Self {
-        Self {
-            kind: ConflictType::ExistingOriginalChange,
+            kind: ConflictType::IncompleteTranslation,
             trigger,
             original,
             reference_url,
@@ -186,7 +167,8 @@ pub fn compare_pulls(
 
     let mut overlaps = Vec::new();
     let mut originals = Vec::new();
-    let mut translations = Vec::new();
+
+    let mut is_new_translation = false;
 
     for incoming in new_diff
         .files()
@@ -213,39 +195,37 @@ pub fn compare_pulls(
 
             if new_article.is_original() && other_article.is_translation() {
                 originals.push(new_article.file_path());
-            } else if new_article.is_translation() && other_article.is_original() {
-                translations.push(new_article.file_path());
+            } else if other_article.is_original() && new_article.is_translation() {
+                originals.push(other_article.file_path());
+                is_new_translation = true;
             }
         }
     }
 
     overlaps.sort();
     originals.sort();
-    translations.sort();
 
     let mut out = Vec::new();
     if !overlaps.is_empty() {
-        out.push(Conflict::existing_change(
+        out.push(Conflict::overlap(
             new_pull.number,
             other_pull.number,
             other_pull.html_url.clone(),
             overlaps,
         ));
     }
+
     if !originals.is_empty() {
-        out.push(Conflict::new_original_change(
-            other_pull.number,
-            new_pull.number,
-            new_pull.html_url.clone(),
+        let (trigger, original) = if is_new_translation {
+            (&new_pull, &other_pull)
+        } else {
+            (&other_pull, &new_pull)
+        };
+        out.push(Conflict::incomplete_translation(
+            trigger.number,
+            original.number,
+            original.html_url.clone(),
             originals,
-        ));
-    }
-    if !translations.is_empty() {
-        out.push(Conflict::existing_original_change(
-            new_pull.number,
-            other_pull.number,
-            other_pull.html_url.clone(),
-            translations,
         ));
     }
     out.sort();
@@ -272,7 +252,12 @@ impl Storage {
     pub fn upsert(&self, full_repo_name: &str, c: &Conflict) -> bool {
         let mut all_conflicts = self.map.lock().unwrap();
         let repo_conflicts = all_conflicts.entry(full_repo_name.to_string()).or_default();
-        let entry = repo_conflicts.entry(c.key()).or_insert(c.clone());
+        if !repo_conflicts.contains_key(&c.key()) {
+            repo_conflicts.insert(c.key(), c.clone());
+            return true;
+        }
+
+        let entry = repo_conflicts.get_mut(&c.key()).unwrap();
         if entry == c {
             false
         } else {
@@ -299,12 +284,27 @@ impl Storage {
         }
     }
 
+    fn prune_conflicts<F>(&self, full_repo_name: &str, predicate: F)
+    where
+        F: Fn(&Conflict) -> bool,
+    {
+        if let Some(m) = self.map.lock().unwrap().get_mut(full_repo_name) {
+            m.retain(|_, v| !predicate(v));
+        }
+    }
+
     pub fn by_original(&self, full_repo_name: &str, pull_number: i32) -> Vec<Conflict> {
         self.select_conflicts(full_repo_name, |c| c.original == pull_number)
     }
 
     pub fn by_trigger(&self, full_repo_name: &str, pull_number: i32) -> Vec<Conflict> {
         self.select_conflicts(full_repo_name, |c| c.trigger == pull_number)
+    }
+
+    pub fn remove_conflicts_by_pull(&self, full_repo_name: &str, pull_number: i32) {
+        self.prune_conflicts(full_repo_name, |c| {
+            c.trigger == pull_number || c.original == pull_number
+        });
     }
 }
 
