@@ -235,20 +235,24 @@ pub fn compare_pulls(
 type ConflictKey = (i32, i32, ConflictType);
 impl Conflict {
     pub fn key(&self) -> ConflictKey {
-        (
-            std::cmp::min(self.original, self.trigger),
-            std::cmp::max(self.original, self.trigger),
-            self.kind.clone(),
-        )
+        if self.original < self.trigger {
+            (self.original, self.trigger, self.kind.clone())
+        } else {
+            (self.trigger, self.original, self.kind.clone())
+        }
     }
 }
 
+/// Helper for storing and updating conflicts between pull requests.
 #[derive(Default, Debug, Clone)]
 pub struct Storage {
     map: Arc<Mutex<HashMap<String, HashMap<ConflictKey, Conflict>>>>,
 }
 
 impl Storage {
+    /// Record or update a conflict, and return its updated version, so that the controller
+    /// can send notifications 1) to correct pull, and 2) with proper metadata. The latter is important because
+    /// it doesn't have full information about what should be posted.
     pub fn upsert(&self, full_repo_name: &str, c: &Conflict) -> Option<Conflict> {
         let mut all_conflicts = self.map.lock().unwrap();
         let repo_conflicts = all_conflicts.entry(full_repo_name.to_string()).or_default();
@@ -269,6 +273,7 @@ impl Storage {
         }
     }
 
+    /// Return only conflicts for which `predicate` returns `true`.
     fn select_conflicts<F>(&self, full_repo_name: &str, predicate: F) -> Vec<Conflict>
     where
         F: Fn(&Conflict) -> bool,
@@ -283,6 +288,7 @@ impl Storage {
         }
     }
 
+    /// Remove conflicts for which `predicate` returns `true`, preserving anything else.
     fn prune_conflicts<F>(&self, full_repo_name: &str, predicate: F)
     where
         F: Fn(&Conflict) -> bool,
@@ -292,18 +298,25 @@ impl Storage {
         }
     }
 
+    /// Return conflicts with `pull_number` as the original pull, which counts as the source of truth.
     pub fn by_original(&self, full_repo_name: &str, pull_number: i32) -> Vec<Conflict> {
         self.select_conflicts(full_repo_name, |c| c.original == pull_number)
     }
 
+    /// Return conflicts with `pull_number` as the trigger pull, which initiated the conflict and needs to be updated.
     pub fn by_trigger(&self, full_repo_name: &str, pull_number: i32) -> Vec<Conflict> {
         self.select_conflicts(full_repo_name, |c| c.trigger == pull_number)
     }
 
+    /// Remove any conflicts involving `pull_number` being either the original or the cause of conflict.
     pub fn remove_conflicts_by_pull(&self, full_repo_name: &str, pull_number: i32) {
         self.prune_conflicts(full_repo_name, |c| {
             c.trigger == pull_number || c.original == pull_number
         });
+    }
+
+    pub fn remove_repository(&self, full_repo_name: &str) {
+        self.map.lock().unwrap().remove(&full_repo_name.to_string());
     }
 }
 

@@ -8,8 +8,8 @@ use crate::helpers::ToMarkdown;
 /// Warn the author of a new pull request about someone else's unmerged work.
 pub const OVERLAP_TEMPLATE: &str = "Someone else has edited same files as you did. Please check their changes in case they conflict with yours:\n";
 
-/// Warn the author of an existing translation request about new changes in the original article.
-pub const INCOMPLETE_TRANSLATION_TEMPLATE: &str = "Some articles might have changes that are missing from your translation. Please update it after they are merged:\n";
+/// Warn the author of a translation request about new changes in the original article.
+pub const INCOMPLETE_TRANSLATION_TEMPLATE: &str = "Your translation may not include changes from these pull requests. Please update it after they are merged:\n";
 
 pub const HTML_COMMENT_START: &str = "<!--";
 pub const HTML_COMMENT_END: &str = "-->";

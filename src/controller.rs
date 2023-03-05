@@ -34,6 +34,7 @@ where
     /// The cache with pull requests and their diffs.
     memory: memory::Memory,
 
+    /// The conflicts cache for continuous update.
     conflicts: conflicts::Storage,
 
     /// Controller-specific settings taken from `config.yaml`.
@@ -51,10 +52,12 @@ impl<T: GitHubInterface> Controller<T> {
         }
     }
 
+    /// Obtain list of current GitHub App installations and their repositories.
     pub fn installations(&self) -> Vec<structs::Installation> {
         self.github.cached_installations()
     }
 
+    /// Update list of current GitHub App installations and their repositories after handling an update event.
     pub fn update_cached_installation(&self, installation: structs::Installation) {
         self.github.update_cached_installation(installation);
     }
@@ -97,8 +100,10 @@ impl<T: GitHubInterface> Controller<T> {
         }
     }
 
+    /// Remove repository from memory, forgetting anything about it.
     pub fn remove_repository(&self, r: &structs::Repository) {
         self.memory.drop_repository(&r.full_name);
+        self.conflicts.remove_repository(&r.full_name)
     }
 
     /// Purge a pull request from memory, excluding it from conflict detection.
@@ -114,7 +119,7 @@ impl<T: GitHubInterface> Controller<T> {
     /// which may have its own rate limits.
     ///
     /// If `trigger_updates` is set, check if the update conflicts with existing pull requests,
-    /// and make its author aware (or other PRs' owners, in rare cases).
+    /// and make its author aware (or other PRs' owners, in rare cases). For details, see [`helpers::conflicts::Storage`].
     pub async fn add_pull(
         &self,
         full_repo_name: &str,
