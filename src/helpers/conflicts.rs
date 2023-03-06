@@ -1,6 +1,7 @@
 /// `pulls` contains structures and helpers for detecting conflicts between two pull requests.
 use std::cmp::{PartialEq, PartialOrd};
 use std::collections::hash_map::{Entry, HashMap};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -138,6 +139,10 @@ impl Article {
         Self { path, language }
     }
 
+    pub fn original_file_path(&self) -> String {
+        format!("{}/en.md", self.path)
+    }
+
     pub fn file_path(&self) -> String {
         format!("{}/{}.md", self.path, self.language)
     }
@@ -175,20 +180,29 @@ pub fn compare_pulls(
         .iter()
         .filter(|fp| fp.target_file.ends_with(".md"))
     {
-        for other in other_diff
+        let other_files: HashSet<_> = other_diff
             .files()
             .iter()
-            .filter(|fp| fp.target_file.ends_with(".md"))
-        {
+            .filter(|patched| patched.target_file.ends_with(".md"))
+            .map(|patched| patched.path())
+            .collect();
+        for other in other_files.iter() {
             let new_article = Article::from_file_path(&incoming.path());
-            let other_article = Article::from_file_path(&other.path());
+            let other_article = Article::from_file_path(other);
 
             // Different folders.
             if new_article.path != other_article.path {
                 continue;
             }
 
-            if new_article == other_article {
+            // Protect against duplicate conflicts when an original change also marks translations as outdated:
+            // [EN (meaningful update), RU (outdate translation)] vs [RU (translation update)] produces only one conflict (IncompleteTranslation).
+            let translation_only_change = new_article.is_translation()
+                && !other_files.contains(&new_article.original_file_path());
+
+            if new_article == other_article
+                && (new_article.is_original() || translation_only_change)
+            {
                 overlaps.push(new_article.file_path());
                 continue;
             }
@@ -252,7 +266,7 @@ pub struct Storage {
 impl Storage {
     /// Record or update a conflict, and return its updated version, so that the controller
     /// can send notifications 1) to correct pull, and 2) with proper metadata. The latter is important because
-    /// it doesn't have full information about what should be posted.
+    /// the controller doesn't have full information about what should be posted and where after the update.
     pub fn upsert(&self, full_repo_name: &str, c: &Conflict) -> Option<Conflict> {
         let mut all_conflicts = self.map.lock().unwrap();
         let repo_conflicts = all_conflicts.entry(full_repo_name.to_string()).or_default();

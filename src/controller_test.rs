@@ -600,6 +600,36 @@ async fn test_incomplete_translation_update_recognized() {
 }
 
 #[tokio::test]
+async fn test_outdated_translation_produces_single_conflict() {
+    let c = make_controller(true).await;
+    let pulls = [
+        c.github
+            .test_add_pull("test/repo", &["wiki/Article/en.md", "wiki/Article/ru.md"]),
+        c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
+    ];
+    for p in pulls.iter() {
+        c.add_pull(
+            "test/repo",
+            c.github.fetch_pull("test/repo", p.number),
+            false,
+        )
+        .await
+        .unwrap();
+    }
+
+    assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
+    assert_eq!(
+        &c.conflicts.by_trigger("test/repo", 2),
+        &vec![Conflict::incomplete_translation(
+            2,
+            1,
+            pull_link("test/repo", 1),
+            vec!["wiki/Article/en.md".to_string(),]
+        )]
+    );
+}
+
+#[tokio::test]
 async fn test_three_conflicts_at_once() {
     let c = make_controller(true).await;
     let pulls = [
