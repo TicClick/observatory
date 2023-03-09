@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use eyre::Result;
 
 use crate::config;
-use crate::github::GitHubInterface;
+use crate::github::{GitHub, GitHubInterface};
 use crate::helpers::comments::CommentHeader;
 use crate::helpers::conflicts::{self, ConflictType};
 use crate::helpers::ToMarkdown;
@@ -175,10 +175,10 @@ impl<T: GitHubInterface> Controller<T> {
         pending: HashMap<i32, Vec<conflicts::Conflict>>,
         full_repo_name: &str,
     ) -> Result<()> {
-        for (target, updates) in pending.into_iter() {
+        for (pull_to_notify, updates) in pending.into_iter() {
             let existing_comments = self
                 .github
-                .list_comments(full_repo_name, target)
+                .list_comments(full_repo_name, pull_to_notify)
                 .await?
                 .into_iter()
                 .filter(|c| self.has_control_over(&c.user));
@@ -199,43 +199,43 @@ impl<T: GitHubInterface> Controller<T> {
                             .await
                         {
                             log::error!(
-                                "Failed to update comment #{} in pull request {}/#{} (about #{}): {:?}",
+                                "Failed to update comment #{} about pull #{} of kind {:?} in {}: {:?}",
                                 existing_comment.id,
-                                full_repo_name,
-                                key.0,
-                                target,
+                                u.original,
+                                u.kind,
+                                GitHub::pull_url(full_repo_name, pull_to_notify),
                                 e
                             );
                         }
                     } else {
                         log::debug!(
-                            "Would update a comment #{} in pull request {}/#{} (about #{})",
+                            "Would update comment #{} about pull #{} of kind {:?} in {}",
                             existing_comment.id,
-                            full_repo_name,
-                            key.0,
-                            target
+                            u.original,
+                            u.kind,
+                            GitHub::pull_url(full_repo_name, pull_to_notify),
                         );
                     }
                 } else if self.config.post_comments {
                     if let Err(e) = self
                         .github
-                        .post_comment(full_repo_name, target, u.to_markdown())
+                        .post_comment(full_repo_name, pull_to_notify, u.to_markdown())
                         .await
                     {
                         log::error!(
-                            "Failed to post a NEW comment in pull request {}/#{} (about #{}): {:?}",
-                            full_repo_name,
-                            key.0,
-                            target,
+                            "Failed to post a NEW comment about pull #{} of kind {:?} in {}: {:?}",
+                            u.original,
+                            u.kind,
+                            GitHub::pull_url(full_repo_name, pull_to_notify),
                             e
                         );
                     }
                 } else {
                     log::debug!(
-                        "Would post a new comment in pull request {}/#{} (about #{})",
-                        full_repo_name,
-                        key.0,
-                        target
+                        "Would post a NEW comment about #{} of kind {:?} in {}",
+                        u.original,
+                        u.kind,
+                        GitHub::pull_url(full_repo_name, pull_to_notify),
                     );
                 }
             }
