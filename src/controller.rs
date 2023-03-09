@@ -77,8 +77,8 @@ impl<T: GitHubInterface> Controller<T> {
 
     /// Add an installation and fetch pull requests (one installation may have several repos).
     pub async fn add_installation(&self, installation: structs::Installation) -> Result<()> {
-        self.github.add_installation(installation.clone()).await?;
-        for r in installation.repositories {
+        let updated_installation = self.github.add_installation(installation).await?;
+        for r in updated_installation.repositories {
             self.add_repository(&r).await?;
         }
         Ok(())
