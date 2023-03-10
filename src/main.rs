@@ -21,7 +21,7 @@ struct Args {
 }
 
 pub async fn index(_: Request) -> viz::Result<Response> {
-    if cfg!(linux) {
+    if !cfg!(windows) {
         let mut body = Vec::new();
         for (header, value) in cgroup::CGroup::current().summary() {
             let val = value.replace('\n', "<br/>");

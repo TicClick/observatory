@@ -10,7 +10,8 @@ impl CGroup {
     pub fn current() -> Self {
         let pid = std::process::id();
         if let Ok(cgroup_name) = std::fs::read_to_string(format!("/proc/{pid}/cgroup")) {
-            if let Some(cgroup_path) = cgroup_name.strip_prefix("0::/") {
+            if let Some(mut cgroup_path) = cgroup_name.strip_prefix("0::/") {
+                cgroup_path = cgroup_path.trim();
                 if !cgroup_path.is_empty() {
                     return CGroup {
                         path: Path::new(&format!("/sys/fs/cgroup/{cgroup_path}")).to_path_buf(),
