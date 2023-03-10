@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
@@ -32,17 +32,17 @@ impl CGroup {
         std::fs::read_to_string(self.path.as_path().join(subsystem)).ok()
     }
 
-    pub fn summary(&self) -> HashMap<String, String> {
-        let mut m = HashMap::new();
+    pub fn summary(&self) -> BTreeMap<String, String> {
+        let mut m = BTreeMap::new();
         if !self.valid() {
             return m;
         }
         for subsystem in [
-            "cgroup.threads",
             "memory.current",
+            "memory.pressure",
             "cpu.pressure",
             "io.pressure",
-            "memory.pressure",
+            "cgroup.threads",
         ] {
             if let Some(data) = self.read(subsystem) {
                 m.insert(subsystem.to_owned(), data);
