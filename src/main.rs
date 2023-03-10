@@ -6,11 +6,11 @@ use clap::Parser;
 use eyre::Result;
 
 use viz::middleware::limits;
-use viz::IntoResponse;
 use viz::{types::State, Router, Server, ServiceMaker};
+use viz::{IntoResponse, Response, ResponseExt};
 use viz::{Request, RequestExt, StatusCode};
 
-use observatory::{config, controller, github, handler};
+use observatory::{config, controller, github, handler, helpers::cgroup};
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -20,8 +20,16 @@ struct Args {
     config: String,
 }
 
-pub async fn index(_: Request) -> viz::Result<String> {
-    Ok(r"¯\_(ツ)_/¯".to_owned())
+pub async fn index(_: Request) -> viz::Result<Response> {
+    if cfg!(linux) {
+        let mut body = Vec::new();
+        for (header, value) in cgroup::CGroup::current().summary() {
+            let val = value.replace('\n', "<br/>");
+            body.push(format!(r"<h3><tt>{header}</tt></h3><tt>{val}</tt><br/>"));
+        }
+        return Ok(Response::html(body.join("")));
+    }
+    Ok(Response::html(r"¯\_(ツ)_/¯".to_owned()))
 }
 
 #[derive(Debug, Clone)]

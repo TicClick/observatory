@@ -1,3 +1,4 @@
+pub mod cgroup;
 pub mod comments;
 pub mod conflicts;
 
