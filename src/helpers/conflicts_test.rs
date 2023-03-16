@@ -8,7 +8,7 @@ fn conflict_to_markdown() {
         1,
         2,
         pull_link("test/repo", 2),
-        vec!["wiki/Ranking_criteria/en.md".to_string()],
+        vec!["wiki/Ranking_Criteria/en.md".to_string()],
     );
     assert_eq!(
         c1.to_markdown(),
@@ -19,9 +19,7 @@ conflict_type: Overlap
 -->
 {}
 - https://github.com/test/repo/pull/2, files:
-  ```
-  wiki/Ranking_criteria/en.md
-  ```"#,
+  - [`wiki/Ranking_Criteria/en.md`](https://github.com/test/repo/pull/2/files#diff-d83e7a1fb8077f937a9a91827c6cb673767a7ebb721e3482bdc146a80802b3d2)"#,
             comments::OVERLAP_TEMPLATE
         )
     );

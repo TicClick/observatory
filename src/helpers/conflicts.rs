@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::comments;
 use crate::helpers::ToMarkdown;
+use crate::helpers::{comments, digest};
 use crate::structs;
 
 /// Types of pull conflicts
@@ -113,11 +113,11 @@ impl ToMarkdown for Conflict {
         } else {
             lines.push(format!("- {}, files:", self.reference_url));
             let indent = "  ";
-            lines.push(format!("{indent}```"));
             for file in &self.file_set {
-                lines.push(format!("{indent}{file}"));
+                let file_name_hash = digest::hash_data(&ring::digest::SHA256, file.as_bytes());
+                let file_link = format!("{}/files#diff-{}", self.reference_url, file_name_hash);
+                lines.push(format!("{indent}- [`{file}`]({file_link})"));
             }
-            lines.push(format!("{indent}```"));
         }
 
         lines.join("\n")
