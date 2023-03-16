@@ -10,6 +10,7 @@ use viz::{types::State, Router, Server, ServiceMaker};
 use viz::{IntoResponse, Response, ResponseExt};
 use viz::{Request, RequestExt, StatusCode};
 
+use observatory::helpers::digest::RequestValidator;
 use observatory::{config, controller, github, handler, helpers::cgroup};
 
 #[derive(Parser, Debug)]
@@ -30,40 +31,6 @@ pub async fn index(_: Request) -> viz::Result<Response> {
         return Ok(Response::html(body.join("")));
     }
     Ok(Response::html(r"¯\_(ツ)_/¯".to_owned()))
-}
-
-#[derive(Debug, Clone)]
-pub struct RequestValidator {
-    token: String,
-}
-
-impl RequestValidator {
-    pub fn new(token: String) -> Self {
-        Self { token }
-    }
-
-    pub fn validate(&self, data: &str, signature: &str) -> Result<bool> {
-        // The signature is a string where every two letters describe a byte (high 4 bits | low 4 bits).
-        // Example: fbf26f84aa96ef919cb4b2d81e86cb9236204e48d16b6e34145d36acfd0b8d5d
-        // To convert it to bytes, read every letter as a hex digit, then combine every pair of them
-        // into a proper byte.
-        let from_hex: Vec<u8> = signature
-            .chars()
-            .map(|ch| match ch {
-                '0'..='9' => ch as u8 - b'0',
-                'a'..='f' => (ch as u8 - b'a') + 10,
-                _ => b'_', // yeah this isn't supposed to happen
-            })
-            .collect();
-        let mut bytes = Vec::new();
-        for i in 0..from_hex.len() / 2 {
-            bytes.push(from_hex[2 * i] << 4 | from_hex[2 * i + 1]);
-        }
-
-        let key = &ring::hmac::Key::new(ring::hmac::HMAC_SHA256, self.token.as_bytes());
-        let local_signature = ring::hmac::sign(key, data.as_bytes());
-        Ok(bytes == local_signature.as_ref())
-    }
 }
 
 pub async fn github_events(mut req: Request) -> viz::Result<()> {
