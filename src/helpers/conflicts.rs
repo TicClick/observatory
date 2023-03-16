@@ -1,7 +1,7 @@
 /// `pulls` contains structures and helpers for detecting conflicts between two pull requests.
 use std::cmp::{PartialEq, PartialOrd};
-use std::collections::hash_map::{Entry, HashMap};
-use std::collections::HashSet;
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -170,8 +170,8 @@ pub fn compare_pulls(
     let new_diff = new_pull.diff.as_ref().unwrap();
     let other_diff = other_pull.diff.as_ref().unwrap();
 
-    let mut overlaps = Vec::new();
-    let mut originals = Vec::new();
+    let mut overlaps = BTreeSet::new();
+    let mut originals = BTreeSet::new();
 
     let mut is_new_translation = false;
 
@@ -180,7 +180,7 @@ pub fn compare_pulls(
         .iter()
         .filter(|fp| fp.target_file.ends_with(".md"))
     {
-        let other_files: HashSet<_> = other_diff
+        let other_files: BTreeSet<_> = other_diff
             .files()
             .iter()
             .filter(|patched| patched.target_file.ends_with(".md"))
@@ -203,21 +203,18 @@ pub fn compare_pulls(
             if new_article == other_article
                 && (new_article.is_original() || translation_only_change)
             {
-                overlaps.push(new_article.file_path());
+                overlaps.insert(new_article.file_path());
                 continue;
             }
 
             if new_article.is_original() && other_article.is_translation() {
-                originals.push(new_article.file_path());
+                originals.insert(new_article.file_path());
             } else if other_article.is_original() && new_article.is_translation() {
-                originals.push(other_article.file_path());
+                originals.insert(other_article.file_path());
                 is_new_translation = true;
             }
         }
     }
-
-    overlaps.sort();
-    originals.sort();
 
     let mut out = Vec::new();
     if !overlaps.is_empty() {
@@ -225,7 +222,7 @@ pub fn compare_pulls(
             new_pull.number,
             other_pull.number,
             other_pull.html_url.clone(),
-            overlaps,
+            overlaps.into_iter().collect(),
         ));
     }
 
@@ -239,7 +236,7 @@ pub fn compare_pulls(
             trigger.number,
             original.number,
             original.html_url.clone(),
-            originals,
+            originals.into_iter().collect(),
         ));
     }
     out.sort();
