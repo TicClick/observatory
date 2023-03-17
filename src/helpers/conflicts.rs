@@ -53,21 +53,6 @@ pub struct Conflict {
 }
 
 impl Conflict {
-    pub fn new(
-        kind: ConflictType,
-        trigger: i32,
-        original: i32,
-        reference_url: String,
-        file_set: Vec<String>,
-    ) -> Self {
-        Self {
-            kind,
-            trigger,
-            original,
-            reference_url,
-            file_set,
-        }
-    }
     pub fn overlap(
         trigger: i32,
         original: i32,
@@ -244,13 +229,16 @@ pub fn compare_pulls(
 }
 
 type ConflictKey = (i32, i32, ConflictType);
+pub fn make_conflict_key(original: i32, trigger: i32, kind: &ConflictType) -> ConflictKey {
+    if original < trigger {
+        (original, trigger, kind.clone())
+    } else {
+        (trigger, original, kind.clone())
+    }
+}
 impl Conflict {
     pub fn key(&self) -> ConflictKey {
-        if self.original < self.trigger {
-            (self.original, self.trigger, self.kind.clone())
-        } else {
-            (self.trigger, self.original, self.kind.clone())
-        }
+        make_conflict_key(self.original, self.trigger, &self.kind)
     }
 }
 
@@ -317,6 +305,34 @@ impl Storage {
     /// Return conflicts with `pull_number` as the trigger pull, which initiated the conflict and needs to be updated.
     pub fn by_trigger(&self, full_repo_name: &str, pull_number: i32) -> Vec<Conflict> {
         self.select_conflicts(full_repo_name, |c| c.trigger == pull_number)
+    }
+
+    /// Remove cached conflicts which are not present anymore (stale).
+    pub fn remove_missing(
+        &self,
+        full_repo_name: &str,
+        original: i32,
+        trigger: i32,
+        detected: &[Conflict],
+    ) -> Vec<Conflict> {
+        if let Some(m) = self.map.lock().unwrap().get_mut(full_repo_name) {
+            let possible_keys = vec![
+                make_conflict_key(original, trigger, &ConflictType::Overlap),
+                make_conflict_key(original, trigger, &ConflictType::IncompleteTranslation),
+            ];
+            let keys_to_preserve: Vec<_> = detected.iter().map(|c| c.key()).collect();
+            let mut removed = Vec::new();
+            for k in possible_keys
+                .iter()
+                .filter(|kk| !keys_to_preserve.contains(kk))
+            {
+                if let Some(c) = m.remove(k) {
+                    removed.push(c);
+                }
+            }
+            return removed;
+        }
+        Vec::new()
     }
 
     /// Remove any conflicts involving `pull_number` being either the original or the cause of conflict.

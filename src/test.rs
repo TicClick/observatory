@@ -188,6 +188,24 @@ impl github::GitHubInterface for DummyGitHubClient {
         eyre::bail!("no comment {} found", comment_id);
     }
 
+    async fn delete_comment(&self, full_repo_name: &str, comment_id: i64) -> Result<()> {
+        let mut found = false;
+        if let Some(comments) = self.comments.lock().unwrap().get_mut(full_repo_name) {
+            for comments_per_pull in comments.values_mut() {
+                comments_per_pull.retain(|c| {
+                    if c.id == comment_id {
+                        found = true;
+                    }
+                    c.id != comment_id
+                });
+            }
+        }
+        if !found {
+            eyre::bail!("no comment {} found", comment_id);
+        }
+        Ok(())
+    }
+
     async fn list_comments(
         &self,
         full_repo_name: &str,
