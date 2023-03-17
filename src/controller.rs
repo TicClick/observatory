@@ -140,12 +140,34 @@ impl<T: GitHubInterface> Controller<T> {
                 .collect();
             pulls.sort_by_key(|pr| pr.created_at);
 
-            // Compare the new pull with existing for conflicts.
-            // Known conflicts are skipped (same kind + same file set), otherwise memory is updated.
+            // Compare the new pull with existing ones for conflicts:
+            // - Known conflicts (same kind + same file set) are skipped, otherwise memory is updated.
+            // - Conflicts that don't occur anymore are removed from cache, with subsequent comment removal.
 
             let mut pending_updates: HashMap<i32, Vec<conflicts::Conflict>> = HashMap::new();
+            let mut conflicts_to_remove: HashMap<i32, Vec<conflicts::Conflict>> = HashMap::new();
             for other_pull in pulls {
                 let conflicts = conflicts::compare_pulls(&new_pull, &other_pull);
+
+                // Note: after a conflict disappears, any interfering updates to the original pull will flip the roles:
+                // the pull which triggered the new conflict will be considered an original. This is a scenario rare enough
+                // (think indecisive people bringing changes in and out), but one that we should consider and have written down.
+                // Also, it's simpler than maintaining a cache of "inactive" conflicts, at least for now.
+                // Related test: test_new_comment_is_posted_after_removal_in_different_pull
+
+                let removed_conflicts = self.conflicts.remove_missing(
+                    full_repo_name,
+                    other_pull.number,
+                    new_pull.number,
+                    &conflicts,
+                );
+                for removed in removed_conflicts {
+                    conflicts_to_remove
+                        .entry(removed.trigger)
+                        .or_default()
+                        .push(removed);
+                }
+
                 for conflict in conflicts {
                     if let Some(updated_conflict) = self.conflicts.upsert(full_repo_name, &conflict)
                     {
@@ -157,7 +179,8 @@ impl<T: GitHubInterface> Controller<T> {
                 }
             }
             if trigger_updates {
-                self.send_updates(pending_updates, full_repo_name).await?;
+                self.send_updates(pending_updates, conflicts_to_remove, full_repo_name)
+                    .await?;
             }
         }
         Ok(())
@@ -170,25 +193,62 @@ impl<T: GitHubInterface> Controller<T> {
     /// The header is a reliable alternative to parsing everything from comments (provided no one tampers with them).
     ///
     /// Comments already left by the bot are reused for updates, both to avoid spam and make notification process easier.
+    /// Comments about obsolete conflicts are removed; the lists of conflicts to update and to remove have no intersection.
     pub async fn send_updates(
         &self,
         pending: HashMap<i32, Vec<conflicts::Conflict>>,
+        to_remove: HashMap<i32, Vec<conflicts::Conflict>>,
         full_repo_name: &str,
     ) -> Result<()> {
-        for (pull_to_notify, updates) in pending.into_iter() {
+        // Read all comments in affected pulls and find these which point to other pulls ("originals").
+        let mut pull_references: HashMap<(i32, ConflictType), IssueComment> = HashMap::new();
+        for pull_number in pending.keys().chain(to_remove.keys()) {
             let existing_comments = self
                 .github
-                .list_comments(full_repo_name, pull_to_notify)
+                .list_comments(full_repo_name, *pull_number)
                 .await?
                 .into_iter()
                 .filter(|c| self.has_control_over(&c.user));
-            let mut pull_references: HashMap<(i32, ConflictType), IssueComment> = HashMap::new();
             for c in existing_comments {
                 if let Some(header) = CommentHeader::from_comment(&c.body) {
                     pull_references.insert((header.pull_number, header.conflict_type), c);
                 }
             }
+        }
 
+        for (pull_to_clean, obsolete_conflicts) in to_remove.into_iter() {
+            for r in obsolete_conflicts {
+                let key = (r.original, r.kind.clone());
+                if let Some(existing_comment) = pull_references.get(&key) {
+                    if self.config.post_comments {
+                        if let Err(e) = self
+                            .github
+                            .delete_comment(full_repo_name, existing_comment.id)
+                            .await
+                        {
+                            log::error!(
+                                "Failed to delete comment #{} about pull #{} of kind {:?} in {}: {:?}",
+                                existing_comment.id,
+                                r.original,
+                                r.kind,
+                                GitHub::pull_url(full_repo_name, pull_to_clean),
+                                e
+                            );
+                        } else {
+                            log::debug!(
+                                "Would delete comment #{} about pull #{} of kind {:?} in {}",
+                                existing_comment.id,
+                                r.original,
+                                r.kind,
+                                GitHub::pull_url(full_repo_name, pull_to_clean),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        for (pull_to_notify, updates) in pending.into_iter() {
             for u in updates {
                 let key = (u.original, u.kind.clone());
                 if let Some(existing_comment) = pull_references.get(&key) {

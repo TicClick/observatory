@@ -947,6 +947,131 @@ async fn test_post_comment_per_pull_and_conflict_combination() {
 }
 
 #[tokio::test]
+async fn test_obsolete_comment_is_removed() {
+    let c = make_controller(true).await;
+    let pulls = [
+        c.github
+            .test_add_pull("test/repo", &["wiki/Article/en.md", "wiki/Article_2/ru.md"]),
+        c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
+    ];
+    for p in pulls.iter() {
+        c.add_pull(
+            "test/repo",
+            c.github.fetch_pull("test/repo", p.number),
+            true,
+        )
+        .await
+        .unwrap();
+    }
+
+    c.github
+        .test_update_pull("test/repo", 1, &["wiki/Article_2/ru.md"]);
+    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), true)
+        .await
+        .unwrap();
+    assert!(c
+        .github
+        .list_comments("test/repo", 2)
+        .await
+        .unwrap()
+        .is_empty())
+}
+
+#[tokio::test]
+async fn test_only_target_comment_is_removed() {
+    let c = make_controller(true).await;
+    let pulls = [
+        c.github.test_add_pull(
+            "test/repo",
+            &["wiki/Article/ru.md", "wiki/Article/Other_article/en.md"],
+        ),
+        c.github.test_add_pull(
+            "test/repo",
+            &["wiki/Article/ru.md", "wiki/Article/Other_article/ru.md"],
+        ),
+    ];
+    for p in pulls.iter() {
+        c.add_pull(
+            "test/repo",
+            c.github.fetch_pull("test/repo", p.number),
+            true,
+        )
+        .await
+        .unwrap();
+    }
+
+    assert_eq!(
+        c.github.list_comments("test/repo", 2).await.unwrap().len(),
+        2
+    );
+
+    c.github
+        .test_update_pull("test/repo", 1, &["wiki/Article/Other_article/en.md"]);
+    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), true)
+        .await
+        .unwrap();
+
+    let comments = c.github.list_comments("test/repo", 2).await.unwrap();
+    assert_eq!(comments.len(), 1);
+    let h = CommentHeader::from_comment(&comments.first().unwrap().body).unwrap();
+    assert_eq!(
+        h,
+        CommentHeader {
+            pull_number: 1,
+            conflict_type: ConflictType::IncompleteTranslation
+        }
+    );
+}
+
+#[tokio::test]
+async fn test_new_comment_is_posted_after_removal_in_different_pull() {
+    let c = make_controller(true).await;
+    let pulls = [
+        c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
+        c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
+    ];
+    for p in pulls.iter() {
+        c.add_pull(
+            "test/repo",
+            c.github.fetch_pull("test/repo", p.number),
+            true,
+        )
+        .await
+        .unwrap();
+    }
+
+    assert_eq!(
+        c.github.list_comments("test/repo", 2).await.unwrap().len(),
+        1
+    );
+
+    let first_conflict_created_at = chrono::Utc::now();
+
+    c.github
+        .test_update_pull("test/repo", 1, &["wiki/Article/Other_article/en.md"]);
+    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), true)
+        .await
+        .unwrap();
+
+    assert!(c
+        .github
+        .list_comments("test/repo", 2)
+        .await
+        .unwrap()
+        .is_empty());
+
+    c.github
+        .test_update_pull("test/repo", 1, &["wiki/Article/ru.md"]);
+    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), true)
+        .await
+        .unwrap();
+
+    let comments = c.github.list_comments("test/repo", 1).await.unwrap();
+    assert_eq!(comments.first().unwrap().id, 2);
+    assert!(comments.first().unwrap().created_at > first_conflict_created_at);
+}
+
+#[tokio::test]
 async fn test_closed_pull_is_removed() {
     let c = make_controller(true).await;
     let pull = c
@@ -1009,4 +1134,112 @@ async fn test_closed_pull_related_conflicts_removed() {
         assert!(c.conflicts.by_original("test/repo", p.number).is_empty());
         assert!(c.conflicts.by_trigger("test/repo", p.number).is_empty());
     }
+}
+
+#[tokio::test]
+async fn test_obsolete_conflict_removed() {
+    let c = make_controller(true).await;
+    let pulls = [
+        c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
+        c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
+    ];
+    for p in pulls.iter() {
+        c.add_pull(
+            "test/repo",
+            c.github.fetch_pull("test/repo", p.number),
+            false,
+        )
+        .await
+        .unwrap();
+    }
+
+    c.github
+        .test_update_pull("test/repo", 1, &["wiki/Other_article/ru.md"]);
+    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
+        .await
+        .unwrap();
+
+    assert!(c.conflicts.by_original("test/repo", 1).is_empty());
+    assert!(c.conflicts.by_original("test/repo", 2).is_empty());
+}
+
+#[tokio::test]
+async fn test_only_obsolete_conflict_is_removed_overlap() {
+    let c = make_controller(true).await;
+    let pulls = [
+        c.github.test_add_pull(
+            "test/repo",
+            &["wiki/Article/ru.md", "wiki/Article/Other_article/en.md"],
+        ),
+        c.github.test_add_pull(
+            "test/repo",
+            &["wiki/Article/ru.md", "wiki/Article/Other_article/ru.md"],
+        ),
+    ];
+    for p in pulls.iter() {
+        c.add_pull(
+            "test/repo",
+            c.github.fetch_pull("test/repo", p.number),
+            false,
+        )
+        .await
+        .unwrap();
+    }
+
+    c.github
+        .test_update_pull("test/repo", 1, &["wiki/Article/Other_article/en.md"]);
+    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        &c.conflicts.by_trigger("test/repo", 2),
+        &vec![Conflict::incomplete_translation(
+            2,
+            1,
+            pull_link("test/repo", 1),
+            vec!["wiki/Article/Other_article/en.md".to_string()]
+        )]
+    );
+}
+
+#[tokio::test]
+async fn test_only_obsolete_conflict_is_removed_incomplete_translation() {
+    let c = make_controller(true).await;
+    let pulls = [
+        c.github.test_add_pull(
+            "test/repo",
+            &["wiki/Article/ru.md", "wiki/Article/Other_article/en.md"],
+        ),
+        c.github.test_add_pull(
+            "test/repo",
+            &["wiki/Article/ru.md", "wiki/Article/Other_article/ru.md"],
+        ),
+    ];
+    for p in pulls.iter() {
+        c.add_pull(
+            "test/repo",
+            c.github.fetch_pull("test/repo", p.number),
+            false,
+        )
+        .await
+        .unwrap();
+    }
+
+    c.github
+        .test_update_pull("test/repo", 1, &["wiki/Article/ru.md"]);
+    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
+        .await
+        .unwrap();
+
+    assert!(c.conflicts.by_trigger("test/repo", 1).is_empty());
+    assert_eq!(
+        &c.conflicts.by_trigger("test/repo", 2),
+        &vec![Conflict::overlap(
+            2,
+            1,
+            pull_link("test/repo", 1),
+            vec!["wiki/Article/ru.md".to_string()]
+        )]
+    );
 }

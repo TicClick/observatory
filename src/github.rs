@@ -167,6 +167,7 @@ pub trait GitHubInterface {
         comment_id: i64,
         body: String,
     ) -> Result<()>;
+    async fn delete_comment(&self, full_repo_name: &str, comment_id: i64) -> Result<()>;
     async fn list_comments(
         &self,
         full_repo_name: &str,
@@ -549,6 +550,16 @@ impl GitHubInterface for Client {
             .body(comment)
             .bearer_auth(token);
         __json::<structs::IssueComment>(req).await?;
+        Ok(())
+    }
+
+    async fn delete_comment(&self, full_repo_name: &str, comment_id: i64) -> Result<()> {
+        let token = self.pick_token(full_repo_name).await?;
+        let req = self
+            .http_client
+            .delete(GitHub::issue_comment(full_repo_name, comment_id))
+            .bearer_auth(token);
+        __text(req).await?;
         Ok(())
     }
 
