@@ -91,11 +91,19 @@ impl github::GitHubInterface for DummyGitHubClient {
             .collect()
     }
 
-    fn update_cached_installation(&self, installation: structs::Installation) {
-        self.installations
-            .lock()
-            .unwrap()
-            .insert(installation.id, installation.clone());
+    fn add_repositories(&self, installation_id: i64, mut repositories: Vec<structs::Repository>) {
+        if let Some(installation) = self.installations.lock().unwrap().get_mut(&installation_id) {
+            let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
+            installation.repositories.retain(|r| !ids.contains(&r.id));
+            installation.repositories.append(&mut repositories);
+        }
+    }
+
+    fn remove_repositories(&self, installation_id: i64, repositories: Vec<structs::Repository>) {
+        if let Some(installation) = self.installations.lock().unwrap().get_mut(&installation_id) {
+            let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
+            installation.repositories.retain(|r| !ids.contains(&r.id));
+        }
     }
 
     // TODO: set repositories?

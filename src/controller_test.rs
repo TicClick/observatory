@@ -4,7 +4,9 @@ use crate::helpers::conflicts::Conflict;
 use crate::test::{self, pull_link};
 
 async fn make_controller(init: bool) -> Controller<test::DummyGitHubClient> {
-    let mut c = Controller::<test::DummyGitHubClient>::new(
+    let (_, rx) = tokio::sync::mpsc::channel(10);
+    let mut c = Controller::<_>::new(
+        rx,
         "123".to_string(),
         "private-key".to_string(),
         crate::config::Controller {

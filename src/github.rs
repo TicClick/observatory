@@ -146,7 +146,8 @@ pub trait GitHubInterface {
     fn new(app_id: String, key: String) -> Self;
     async fn installations(&self) -> Result<Vec<structs::Installation>>;
     fn cached_installations(&self) -> Vec<structs::Installation>;
-    fn update_cached_installation(&self, installation: structs::Installation);
+    fn add_repositories(&self, installation_id: i64, repositories: Vec<structs::Repository>);
+    fn remove_repositories(&self, installation_id: i64, repositories: Vec<structs::Repository>);
     async fn discover_installations(&self) -> Result<Vec<structs::Installation>>;
     async fn app(&self) -> Result<structs::App>;
     async fn add_installation(
@@ -424,11 +425,19 @@ impl GitHubInterface for Client {
             .collect()
     }
 
-    fn update_cached_installation(&self, installation: structs::Installation) {
-        self.installations
-            .lock()
-            .unwrap()
-            .insert(installation.id, installation);
+    fn add_repositories(&self, installation_id: i64, mut repositories: Vec<structs::Repository>) {
+        if let Some(installation) = self.installations.lock().unwrap().get_mut(&installation_id) {
+            let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
+            installation.repositories.retain(|r| !ids.contains(&r.id));
+            installation.repositories.append(&mut repositories);
+        }
+    }
+
+    fn remove_repositories(&self, installation_id: i64, repositories: Vec<structs::Repository>) {
+        if let Some(installation) = self.installations.lock().unwrap().get_mut(&installation_id) {
+            let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
+            installation.repositories.retain(|r| !ids.contains(&r.id));
+        }
     }
 
     // TODO: confirm that this is actually needed (see similar stuff below)
@@ -476,7 +485,7 @@ impl GitHubInterface for Client {
                     }
                     Ok(response) => {
                         installation.repositories = response.repositories;
-                        self.update_cached_installation(installation.clone());
+                        self.add_repositories(installation.id, installation.repositories.clone());
                         Ok(installation)
                     }
                 }

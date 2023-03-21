@@ -55,8 +55,6 @@ pub async fn github_events(mut req: Request) -> viz::Result<()> {
         return Err(StatusCode::FORBIDDEN.into_error());
     }
 
-    // TODO: instead of processing requests right here, use std::sync::mspc channels -- this way we won't even need to
-    // access the controller from the web server.
     match event_type.as_str() {
         "pull_request" => handler::pull_request_event(req, body).await,
         "installation" => handler::installation_event(req, body).await,
@@ -104,14 +102,17 @@ async fn main() -> Result<()> {
     let webhook_secret = settings.github.webhook_secret;
 
     let validator = RequestValidator::new(webhook_secret);
-    let mut controller = controller::Controller::<github::Client>::new(
+    let controller_handle = controller::ControllerHandle::new::<github::Client>(
         settings.github.app_id,
         private_key,
         settings.controller.clone(),
     );
-    controller.init().await?;
-    log::info!("Active installations: {:?}", controller.installations());
-    log::debug!("GitHub App: {:?}", controller.app);
+    controller_handle.init().await?;
+    log::info!(
+        "Active installations: {:?}",
+        controller_handle.get_installations().await
+    );
+    log::debug!("GitHub App: {:?}", controller_handle.get_app().await);
 
     let ls = viz::types::Limits::new()
         .insert("bytes", DEFAULT_DATA_LIMIT)
@@ -122,7 +123,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .post(&settings.server.events_endpoint, github_events)
         .get("/", index)
-        .with(State::new(controller))
+        .with(State::new(controller_handle))
         .with(State::new(validator))
         .with(limits::Config::default().limits(ls));
 

@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 
 use eyre::Result;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::config;
 use crate::github::{GitHub, GitHubInterface};
@@ -10,6 +11,155 @@ use crate::helpers::conflicts::{self, ConflictType};
 use crate::helpers::ToMarkdown;
 use crate::structs::IssueComment;
 use crate::{memory, structs};
+
+#[derive(Debug)]
+pub enum ControllerRequest {
+    Init {
+        reply_to: oneshot::Sender<Result<()>>,
+    },
+    GetInstallations {
+        reply_to: oneshot::Sender<Vec<structs::Installation>>,
+    },
+    GetApp {
+        reply_to: oneshot::Sender<Option<structs::App>>,
+    },
+
+    PullRequestUpdated {
+        full_repo_name: String,
+        pull_request: Box<structs::PullRequest>,
+        trigger_updates: bool,
+    },
+    PullRequestClosed {
+        full_repo_name: String,
+        pull_request: Box<structs::PullRequest>,
+    },
+
+    InstallationCreated {
+        installation: Box<structs::Installation>,
+    },
+    InstallationDeleted {
+        installation: Box<structs::Installation>,
+    },
+
+    InstallationRepositoriesAdded {
+        installation_id: i64,
+        repositories: Vec<structs::Repository>,
+    },
+    InstallationRepositoriesRemoved {
+        installation_id: i64,
+        repositories: Vec<structs::Repository>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct ControllerHandle {
+    sender: mpsc::Sender<ControllerRequest>,
+}
+
+impl ControllerHandle {
+    pub async fn init(&self) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
+        let _ = self
+            .sender
+            .send(ControllerRequest::Init { reply_to: tx })
+            .await;
+        rx.await?
+    }
+
+    pub async fn get_installations(&self) -> Vec<structs::Installation> {
+        let (tx, rx) = oneshot::channel();
+        let _ = self
+            .sender
+            .send(ControllerRequest::GetInstallations { reply_to: tx })
+            .await;
+        rx.await.unwrap()
+    }
+
+    pub async fn get_app(&self) -> Option<structs::App> {
+        let (tx, rx) = oneshot::channel();
+        let _ = self
+            .sender
+            .send(ControllerRequest::GetApp { reply_to: tx })
+            .await;
+        rx.await.unwrap()
+    }
+
+    pub async fn add_pull(
+        &self,
+        full_repo_name: &str,
+        pull_request: structs::PullRequest,
+        trigger_updates: bool,
+    ) {
+        let msg = ControllerRequest::PullRequestUpdated {
+            full_repo_name: full_repo_name.to_owned(),
+            pull_request: Box::new(pull_request),
+            trigger_updates,
+        };
+        self.sender.send(msg).await.unwrap();
+    }
+
+    pub async fn remove_pull(&self, full_repo_name: &str, pull_request: structs::PullRequest) {
+        let msg = ControllerRequest::PullRequestClosed {
+            full_repo_name: full_repo_name.to_owned(),
+            pull_request: Box::new(pull_request),
+        };
+        self.sender.send(msg).await.unwrap();
+    }
+
+    pub async fn add_installation(&self, installation: structs::Installation) {
+        let msg = ControllerRequest::InstallationCreated {
+            installation: Box::new(installation),
+        };
+        self.sender.send(msg).await.unwrap();
+    }
+
+    pub async fn delete_installation(&self, installation: structs::Installation) {
+        let msg = ControllerRequest::InstallationDeleted {
+            installation: Box::new(installation),
+        };
+        self.sender.send(msg).await.unwrap();
+    }
+
+    pub async fn add_repositories(
+        &self,
+        installation_id: i64,
+        repositories: Vec<structs::Repository>,
+    ) {
+        let msg = ControllerRequest::InstallationRepositoriesAdded {
+            installation_id,
+            repositories,
+        };
+        self.sender.send(msg).await.unwrap();
+    }
+
+    pub async fn remove_repositories(
+        &self,
+        installation_id: i64,
+        repositories: Vec<structs::Repository>,
+    ) {
+        let msg = ControllerRequest::InstallationRepositoriesRemoved {
+            installation_id,
+            repositories,
+        };
+        self.sender.send(msg).await.unwrap();
+    }
+}
+
+impl ControllerHandle {
+    pub fn new<T: GitHubInterface + Sync + Send>(
+        app_id: String,
+        private_key: String,
+        config: config::Controller,
+    ) -> Self {
+        let (tx, rx) = mpsc::channel(10);
+        tokio::spawn(async move {
+            Controller::<T>::new(rx, app_id, private_key, config)
+                .run_forever()
+                .await
+        });
+        Self { sender: tx }
+    }
+}
 
 /// Controller is a representation of a GitHub App, which contains a per-repository cache of
 /// pull requests and corresponding `.diff` files.
@@ -20,11 +170,13 @@ use crate::{memory, structs};
 // The controller checks incoming updates against memory and attempts to determine whether there are conflicts on article levels.
 /// (for details, see [`ConflictType`]). After that, it leaves comments on the pull request which depends on the changes; typically, that is
 /// a translation, whose owner needs to be made aware of changes they may be missing.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Controller<T>
 where
     T: GitHubInterface,
 {
+    receiver: mpsc::Receiver<ControllerRequest>,
+
     /// Information about a GitHub app (used to detect own comments).
     pub app: Option<structs::App>,
 
@@ -42,8 +194,110 @@ where
 }
 
 impl<T: GitHubInterface> Controller<T> {
-    pub fn new(app_id: String, private_key: String, config: config::Controller) -> Self {
+    async fn run_forever(&mut self) {
+        while let Some(msg) = self.receiver.recv().await {
+            self.handle_message(msg).await;
+        }
+    }
+
+    async fn handle_message(&mut self, message: ControllerRequest) {
+        match message {
+            ControllerRequest::Init { reply_to } => {
+                reply_to.send(self.init().await).unwrap();
+            }
+
+            ControllerRequest::GetInstallations { reply_to } => {
+                reply_to.send(self.installations()).unwrap();
+            }
+
+            ControllerRequest::GetApp { reply_to } => {
+                reply_to.send(self.app.clone()).unwrap();
+            }
+
+            ControllerRequest::PullRequestUpdated {
+                full_repo_name,
+                pull_request,
+                trigger_updates,
+            } => {
+                let pull_number = pull_request.number;
+                self.add_pull(&full_repo_name, *pull_request, trigger_updates)
+                    .await
+                    .unwrap_or_else(|e| {
+                        log::error!(
+                            "Pull #{}: failed to update information and trigger comments: {:?}",
+                            pull_number,
+                            e
+                        );
+                    })
+            }
+            ControllerRequest::PullRequestClosed {
+                full_repo_name,
+                pull_request,
+            } => {
+                self.remove_pull(&full_repo_name, *pull_request);
+            }
+
+            ControllerRequest::InstallationCreated { installation } => {
+                let iid = installation.id;
+                self.add_installation(*installation)
+                    .await
+                    .unwrap_or_else(|e| {
+                        log::error!("Installation #{}: addition failed: {:?}", iid, e);
+                    });
+            }
+            ControllerRequest::InstallationDeleted { installation } => {
+                self.delete_installation(*installation)
+            }
+
+            ControllerRequest::InstallationRepositoriesAdded {
+                installation_id,
+                repositories,
+            } => {
+                self.github
+                    .add_repositories(installation_id, repositories.clone());
+                for r in repositories {
+                    log::debug!(
+                        "Adding repository {:?} for installation #{}",
+                        r,
+                        installation_id
+                    );
+                    self.add_repository(&r).await.unwrap_or_else(|e| {
+                        log::error!(
+                            "Repository {:?} for installation #{}: addition failed: {:?}",
+                            r,
+                            installation_id,
+                            e
+                        );
+                    });
+                }
+            }
+
+            ControllerRequest::InstallationRepositoriesRemoved {
+                installation_id,
+                repositories,
+            } => {
+                for r in &repositories {
+                    log::debug!(
+                        "Removing repository {:?} for installation #{}",
+                        r,
+                        installation_id
+                    );
+                    self.remove_repository(r);
+                }
+                self.github
+                    .remove_repositories(installation_id, repositories);
+            }
+        }
+    }
+
+    pub fn new(
+        receiver: mpsc::Receiver<ControllerRequest>,
+        app_id: String,
+        private_key: String,
+        config: config::Controller,
+    ) -> Self {
         Self {
+            receiver,
             app: None,
             github: T::new(app_id, private_key),
             memory: memory::Memory::new(),
@@ -55,11 +309,6 @@ impl<T: GitHubInterface> Controller<T> {
     /// Obtain list of current GitHub App installations and their repositories.
     pub fn installations(&self) -> Vec<structs::Installation> {
         self.github.cached_installations()
-    }
-
-    /// Update list of current GitHub App installations and their repositories after handling an update event.
-    pub fn update_cached_installation(&self, installation: structs::Installation) {
-        self.github.update_cached_installation(installation);
     }
 
     /// Build the in-memory pull request cache on start-up. This will consume a lot of GitHub API quota,
@@ -93,7 +342,7 @@ impl<T: GitHubInterface> Controller<T> {
     }
 
     /// Remove an installation from cache and forget about its pull requests.
-    pub fn remove_installation(&self, installation: structs::Installation) {
+    pub fn delete_installation(&self, installation: structs::Installation) {
         self.github.remove_installation(&installation);
         for r in installation.repositories {
             self.remove_repository(&r);
