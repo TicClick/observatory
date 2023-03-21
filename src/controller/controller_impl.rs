@@ -2,164 +2,16 @@
 use std::collections::HashMap;
 
 use eyre::Result;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
 use crate::config;
+use crate::controller::ControllerRequest;
 use crate::github::{GitHub, GitHubInterface};
 use crate::helpers::comments::CommentHeader;
 use crate::helpers::conflicts::{self, ConflictType};
 use crate::helpers::ToMarkdown;
-use crate::structs::IssueComment;
-use crate::{memory, structs};
-
-#[derive(Debug)]
-pub enum ControllerRequest {
-    Init {
-        reply_to: oneshot::Sender<Result<()>>,
-    },
-    GetInstallations {
-        reply_to: oneshot::Sender<Vec<structs::Installation>>,
-    },
-    GetApp {
-        reply_to: oneshot::Sender<Option<structs::App>>,
-    },
-
-    PullRequestUpdated {
-        full_repo_name: String,
-        pull_request: Box<structs::PullRequest>,
-        trigger_updates: bool,
-    },
-    PullRequestClosed {
-        full_repo_name: String,
-        pull_request: Box<structs::PullRequest>,
-    },
-
-    InstallationCreated {
-        installation: Box<structs::Installation>,
-    },
-    InstallationDeleted {
-        installation: Box<structs::Installation>,
-    },
-
-    InstallationRepositoriesAdded {
-        installation_id: i64,
-        repositories: Vec<structs::Repository>,
-    },
-    InstallationRepositoriesRemoved {
-        installation_id: i64,
-        repositories: Vec<structs::Repository>,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub struct ControllerHandle {
-    sender: mpsc::Sender<ControllerRequest>,
-}
-
-impl ControllerHandle {
-    pub async fn init(&self) -> Result<()> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .sender
-            .send(ControllerRequest::Init { reply_to: tx })
-            .await;
-        rx.await?
-    }
-
-    pub async fn get_installations(&self) -> Vec<structs::Installation> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .sender
-            .send(ControllerRequest::GetInstallations { reply_to: tx })
-            .await;
-        rx.await.unwrap()
-    }
-
-    pub async fn get_app(&self) -> Option<structs::App> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .sender
-            .send(ControllerRequest::GetApp { reply_to: tx })
-            .await;
-        rx.await.unwrap()
-    }
-
-    pub async fn add_pull(
-        &self,
-        full_repo_name: &str,
-        pull_request: structs::PullRequest,
-        trigger_updates: bool,
-    ) {
-        let msg = ControllerRequest::PullRequestUpdated {
-            full_repo_name: full_repo_name.to_owned(),
-            pull_request: Box::new(pull_request),
-            trigger_updates,
-        };
-        self.sender.send(msg).await.unwrap();
-    }
-
-    pub async fn remove_pull(&self, full_repo_name: &str, pull_request: structs::PullRequest) {
-        let msg = ControllerRequest::PullRequestClosed {
-            full_repo_name: full_repo_name.to_owned(),
-            pull_request: Box::new(pull_request),
-        };
-        self.sender.send(msg).await.unwrap();
-    }
-
-    pub async fn add_installation(&self, installation: structs::Installation) {
-        let msg = ControllerRequest::InstallationCreated {
-            installation: Box::new(installation),
-        };
-        self.sender.send(msg).await.unwrap();
-    }
-
-    pub async fn delete_installation(&self, installation: structs::Installation) {
-        let msg = ControllerRequest::InstallationDeleted {
-            installation: Box::new(installation),
-        };
-        self.sender.send(msg).await.unwrap();
-    }
-
-    pub async fn add_repositories(
-        &self,
-        installation_id: i64,
-        repositories: Vec<structs::Repository>,
-    ) {
-        let msg = ControllerRequest::InstallationRepositoriesAdded {
-            installation_id,
-            repositories,
-        };
-        self.sender.send(msg).await.unwrap();
-    }
-
-    pub async fn remove_repositories(
-        &self,
-        installation_id: i64,
-        repositories: Vec<structs::Repository>,
-    ) {
-        let msg = ControllerRequest::InstallationRepositoriesRemoved {
-            installation_id,
-            repositories,
-        };
-        self.sender.send(msg).await.unwrap();
-    }
-}
-
-impl ControllerHandle {
-    pub fn new<T: GitHubInterface + Sync + Send>(
-        app_id: String,
-        private_key: String,
-        config: config::Controller,
-    ) -> Self {
-        let (tx, rx) = mpsc::channel(10);
-        tokio::spawn(async move {
-            Controller::<T>::new(rx, app_id, private_key, config)
-                .run_forever()
-                .await
-        });
-        Self { sender: tx }
-    }
-}
+use crate::memory;
+use crate::structs::*;
 
 /// Controller is a representation of a GitHub App, which contains a per-repository cache of
 /// pull requests and corresponding `.diff` files.
@@ -178,7 +30,7 @@ where
     receiver: mpsc::Receiver<ControllerRequest>,
 
     /// Information about a GitHub app (used to detect own comments).
-    pub app: Option<structs::App>,
+    pub app: Option<App>,
 
     /// GitHub API client -- see [`github::Client`] for details.
     github: T,
@@ -194,7 +46,7 @@ where
 }
 
 impl<T: GitHubInterface> Controller<T> {
-    async fn run_forever(&mut self) {
+    pub async fn run_forever(&mut self) {
         while let Some(msg) = self.receiver.recv().await {
             self.handle_message(msg).await;
         }
@@ -307,7 +159,7 @@ impl<T: GitHubInterface> Controller<T> {
     }
 
     /// Obtain list of current GitHub App installations and their repositories.
-    pub fn installations(&self) -> Vec<structs::Installation> {
+    pub fn installations(&self) -> Vec<Installation> {
         self.github.cached_installations()
     }
 
@@ -325,7 +177,7 @@ impl<T: GitHubInterface> Controller<T> {
     }
 
     /// Add an installation and fetch pull requests (one installation may have several repos).
-    pub async fn add_installation(&self, installation: structs::Installation) -> Result<()> {
+    pub async fn add_installation(&self, installation: Installation) -> Result<()> {
         let updated_installation = self.github.add_installation(installation).await?;
         for r in updated_installation.repositories {
             self.add_repository(&r).await?;
@@ -334,7 +186,7 @@ impl<T: GitHubInterface> Controller<T> {
     }
 
     /// Add a repository and fetch its pull requests.
-    pub async fn add_repository(&self, r: &structs::Repository) -> Result<()> {
+    pub async fn add_repository(&self, r: &Repository) -> Result<()> {
         for p in self.github.pulls(&r.full_name).await? {
             self.add_pull(&r.full_name, p, false).await?;
         }
@@ -342,7 +194,7 @@ impl<T: GitHubInterface> Controller<T> {
     }
 
     /// Remove an installation from cache and forget about its pull requests.
-    pub fn delete_installation(&self, installation: structs::Installation) {
+    pub fn delete_installation(&self, installation: Installation) {
         self.github.remove_installation(&installation);
         for r in installation.repositories {
             self.remove_repository(&r);
@@ -350,7 +202,7 @@ impl<T: GitHubInterface> Controller<T> {
     }
 
     /// Remove repository from memory, forgetting anything about it.
-    pub fn remove_repository(&self, r: &structs::Repository) {
+    pub fn remove_repository(&self, r: &Repository) {
         self.memory.drop_repository(&r.full_name);
         self.conflicts.remove_repository(&r.full_name)
     }
@@ -358,7 +210,7 @@ impl<T: GitHubInterface> Controller<T> {
     /// Purge a pull request from memory, excluding it from conflict detection.
     ///
     /// This should be done only when a pull request is closed or merged.
-    pub fn remove_pull(&self, full_repo_name: &str, closed_pull: structs::PullRequest) {
+    pub fn remove_pull(&self, full_repo_name: &str, closed_pull: PullRequest) {
         self.memory.remove_pull(full_repo_name, &closed_pull);
         self.conflicts
             .remove_conflicts_by_pull(full_repo_name, closed_pull.number);
@@ -372,7 +224,7 @@ impl<T: GitHubInterface> Controller<T> {
     pub async fn add_pull(
         &self,
         full_repo_name: &str,
-        mut new_pull: structs::PullRequest,
+        mut new_pull: PullRequest,
         trigger_updates: bool,
     ) -> Result<()> {
         let diff = self
@@ -383,7 +235,7 @@ impl<T: GitHubInterface> Controller<T> {
         self.memory.insert_pull(full_repo_name, new_pull.clone());
 
         if let Some(pulls_map) = self.memory.pulls(full_repo_name) {
-            let mut pulls: Vec<structs::PullRequest> = pulls_map
+            let mut pulls: Vec<PullRequest> = pulls_map
                 .into_values()
                 .filter(|other| other.number != new_pull.number)
                 .collect();
@@ -555,7 +407,7 @@ impl<T: GitHubInterface> Controller<T> {
     /// A helper for checking if the comment is made by the bot itself.
     ///
     /// Curiously, there is no way of telling this from the comment's JSON.
-    fn has_control_over(&self, user: &structs::Actor) -> bool {
+    fn has_control_over(&self, user: &Actor) -> bool {
         if let Some(app) = &self.app {
             user.login == format!("{}[bot]", &app.slug)
         } else {
@@ -565,5 +417,5 @@ impl<T: GitHubInterface> Controller<T> {
 }
 
 #[cfg(test)]
-#[path = "controller_test.rs"]
-pub(crate) mod tests;
+#[path = "controller_impl_test.rs"]
+pub(crate) mod controller_impl_test;
