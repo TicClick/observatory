@@ -23,14 +23,14 @@ use crate::structs::*;
 /// (for details, see [`ConflictType`]). After that, it leaves comments on the pull request which depends on the changes; typically, that is
 /// a translation, whose owner needs to be made aware of changes they may be missing.
 #[derive(Debug)]
-pub struct Controller<T>
+pub(super) struct Controller<T>
 where
     T: GitHubInterface,
 {
     receiver: mpsc::Receiver<ControllerRequest>,
 
     /// Information about a GitHub app (used to detect own comments).
-    pub app: Option<App>,
+    app: Option<App>,
 
     /// GitHub API client -- see [`github::Client`] for details.
     github: T,
@@ -46,7 +46,7 @@ where
 }
 
 impl<T: GitHubInterface> Controller<T> {
-    pub async fn run_forever(&mut self) {
+    pub(super) async fn run_forever(&mut self) {
         while let Some(msg) = self.receiver.recv().await {
             self.handle_message(msg).await;
         }
@@ -142,7 +142,7 @@ impl<T: GitHubInterface> Controller<T> {
         }
     }
 
-    pub fn new(
+    pub(super) fn new(
         receiver: mpsc::Receiver<ControllerRequest>,
         app_id: String,
         private_key: String,
@@ -159,13 +159,13 @@ impl<T: GitHubInterface> Controller<T> {
     }
 
     /// Obtain list of current GitHub App installations and their repositories.
-    pub fn installations(&self) -> Vec<Installation> {
+    fn installations(&self) -> Vec<Installation> {
         self.github.cached_installations()
     }
 
     /// Build the in-memory pull request cache on start-up. This will consume a lot of GitHub API quota,
     /// but fighting a stale database cache is left as an exercise for another day.
-    pub async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self) -> Result<()> {
         self.app = Some(self.github.app().await?);
         let installations = self.github.discover_installations().await?;
         for i in installations {
@@ -177,7 +177,7 @@ impl<T: GitHubInterface> Controller<T> {
     }
 
     /// Add an installation and fetch pull requests (one installation may have several repos).
-    pub async fn add_installation(&self, installation: Installation) -> Result<()> {
+    async fn add_installation(&self, installation: Installation) -> Result<()> {
         let updated_installation = self.github.add_installation(installation).await?;
         for r in updated_installation.repositories {
             self.add_repository(&r).await?;
@@ -186,7 +186,7 @@ impl<T: GitHubInterface> Controller<T> {
     }
 
     /// Add a repository and fetch its pull requests.
-    pub async fn add_repository(&self, r: &Repository) -> Result<()> {
+    async fn add_repository(&self, r: &Repository) -> Result<()> {
         for p in self.github.pulls(&r.full_name).await? {
             self.add_pull(&r.full_name, p, false).await?;
         }
@@ -194,7 +194,7 @@ impl<T: GitHubInterface> Controller<T> {
     }
 
     /// Remove an installation from cache and forget about its pull requests.
-    pub fn delete_installation(&self, installation: Installation) {
+    fn delete_installation(&self, installation: Installation) {
         self.github.remove_installation(&installation);
         for r in installation.repositories {
             self.remove_repository(&r);
@@ -202,7 +202,7 @@ impl<T: GitHubInterface> Controller<T> {
     }
 
     /// Remove repository from memory, forgetting anything about it.
-    pub fn remove_repository(&self, r: &Repository) {
+    fn remove_repository(&self, r: &Repository) {
         self.memory.drop_repository(&r.full_name);
         self.conflicts.remove_repository(&r.full_name)
     }
@@ -210,7 +210,7 @@ impl<T: GitHubInterface> Controller<T> {
     /// Purge a pull request from memory, excluding it from conflict detection.
     ///
     /// This should be done only when a pull request is closed or merged.
-    pub fn remove_pull(&self, full_repo_name: &str, closed_pull: PullRequest) {
+    fn remove_pull(&self, full_repo_name: &str, closed_pull: PullRequest) {
         self.memory.remove_pull(full_repo_name, &closed_pull);
         self.conflicts
             .remove_conflicts_by_pull(full_repo_name, closed_pull.number);
@@ -221,7 +221,7 @@ impl<T: GitHubInterface> Controller<T> {
     ///
     /// If `trigger_updates` is set, check if the update conflicts with existing pull requests,
     /// and make its author aware (or other PRs' owners, in rare cases). For details, see [`helpers::conflicts::Storage`].
-    pub async fn add_pull(
+    async fn add_pull(
         &self,
         full_repo_name: &str,
         mut new_pull: PullRequest,
@@ -295,7 +295,7 @@ impl<T: GitHubInterface> Controller<T> {
     ///
     /// Comments already left by the bot are reused for updates, both to avoid spam and make notification process easier.
     /// Comments about obsolete conflicts are removed; the lists of conflicts to update and to remove have no intersection.
-    pub async fn send_updates(
+    async fn send_updates(
         &self,
         pending: HashMap<i32, Vec<conflicts::Conflict>>,
         to_remove: HashMap<i32, Vec<conflicts::Conflict>>,

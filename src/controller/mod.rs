@@ -7,6 +7,7 @@ use crate::config;
 use crate::github::GitHubInterface;
 use crate::structs::*;
 
+/// Message structs for interacting with the controller backend.
 #[derive(Debug)]
 pub enum ControllerRequest {
     Init {
@@ -46,6 +47,9 @@ pub enum ControllerRequest {
     },
 }
 
+/// The interface for interacting with the actual controller.
+///
+/// Since all meaningful things only happen in the backend, refer to the implementations' docs for details.
 #[derive(Debug, Clone)]
 pub struct ControllerHandle {
     sender: mpsc::Sender<ControllerRequest>,
