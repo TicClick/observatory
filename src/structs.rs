@@ -4,14 +4,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // https://docs.github.com/en/rest/users/users
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Actor {
     pub id: i64,
     pub login: String,
 }
 
 // https://docs.github.com/en/rest/repos/repos
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Repository {
     pub id: i64,
     pub name: String,
@@ -75,7 +75,7 @@ pub struct InstallationIdWrapper {
 }
 
 // https://docs.github.com/en/rest/reference/apps#list-installations-for-the-authenticated-app
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Installation {
     pub id: i64,
     pub account: Actor,
