@@ -60,5 +60,4 @@ impl ToMarkdown for CommentHeader {
 }
 
 #[cfg(test)]
-#[path = "comments_test.rs"]
-pub(crate) mod tests;
+mod tests;

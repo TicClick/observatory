@@ -427,5 +427,4 @@ impl<T: GitHubInterface> Controller<T> {
 }
 
 #[cfg(test)]
-#[path = "controller_impl_test.rs"]
-pub(crate) mod controller_impl_test;
+mod tests;
