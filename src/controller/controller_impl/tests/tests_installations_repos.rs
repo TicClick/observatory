@@ -14,7 +14,6 @@ async fn test_add_installations() {
                 login: "test-user".into(),
             },
             app_id: 123,
-            repositories: Vec::new(),
         };
         c.add_installation(inst.clone()).await.unwrap();
         installations.push(inst);
@@ -41,13 +40,12 @@ async fn test_add_installation_repositories_fetched() {
             login: "test-user".into(),
         },
         app_id: 123,
-        repositories: Vec::new(),
     };
 
-    c.add_installation(inst.clone()).await.unwrap();
-    let mut v = c.installations();
-    v[0].repositories.sort_by_key(|r| r.id);
-    assert_eq!(v[0].repositories, vec![r1, r2]);
+    c.add_installation(inst).await.unwrap();
+    let mut repos = c.github.cached_repositories(1);
+    repos.sort_by_key(|r| r.id);
+    assert_eq!(repos, vec![r1, r2]);
 }
 
 #[tokio::test]
@@ -69,7 +67,6 @@ async fn test_add_installation_pull_requests_fetched() {
             login: "test-user".into(),
         },
         app_id: 123,
-        repositories: Vec::new(),
     };
 
     c.add_installation(inst.clone()).await.unwrap();
@@ -156,16 +153,16 @@ async fn test_repositories_fetched_during_init() {
     let mut c = make_controller(false).await;
 
     let inst = c.github.test_add_installation();
-    let repos = [
+    let repositories = [
         c.github.test_add_repository(inst.id, "test/my-repo"),
         c.github
             .test_add_repository(inst.id, "test/other-repo-repo"),
     ];
 
     c.init().await.unwrap();
-    let mut v = c.installations();
-    v[0].repositories.sort_by_key(|r| r.id);
-    assert_eq!(v[0].repositories, repos);
+    let mut repos = c.github.cached_repositories(inst.id);
+    repos.sort_by_key(|r| r.id);
+    assert_eq!(repos, repositories);
 }
 
 #[tokio::test]
@@ -209,3 +206,81 @@ async fn test_pulls_fetched_during_init() {
     assert_eq!(second_batch, vec![pulls[2].number]);
 }
 
+#[tokio::test]
+async fn test_delete_installation() {
+    let mut c = make_controller(false).await;
+
+    let inst = c.github.test_add_installation();
+    c.github.test_add_repository(inst.id, "test/my-repo");
+    c.github
+        .test_add_repository(inst.id, "test/other-repo-repo");
+
+    c.github
+        .test_add_pull("test/my-repo", &["wiki/Article/en.md"]);
+    c.github
+        .test_add_pull("test/my-repo", &["wiki/Article/ko.md"]);
+    c.github
+        .test_add_pull("test/other-repo-repo", &["wiki/Other/ko.md"]);
+
+    c.init().await.unwrap();
+    c.delete_installation(inst);
+
+    assert!(c.installations().is_empty());
+
+    assert!(c.memory.pulls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_remove_repositories() {
+    let mut c = make_controller(false).await;
+
+    let inst = c.github.test_add_installation();
+    let r1 = c.github.test_add_repository(inst.id, "test/my-repo");
+    c.github
+        .test_add_repository(inst.id, "test/other-repo-repo");
+
+    c.github
+        .test_add_pull("test/my-repo", &["wiki/Article/en.md"]);
+    c.github
+        .test_add_pull("test/my-repo", &["wiki/Article/ko.md"]);
+    let preserved_pr = c
+        .github
+        .test_add_pull("test/other-repo-repo", &["wiki/Other/ko.md"]);
+
+    c.init().await.unwrap();
+    c.remove_repositories(inst.id, &[r1]);
+
+    assert!(!c.installations().is_empty());
+
+    let second_repo_only = c.memory.pulls.lock().unwrap();
+    assert_eq!(second_repo_only.len(), 1);
+    let cached_pr = second_repo_only
+        .get("test/other-repo-repo")
+        .unwrap()
+        .values()
+        .next()
+        .take()
+        .unwrap();
+    assert_eq!(cached_pr.id, preserved_pr.id);
+}
+
+#[tokio::test]
+async fn test_remove_pull() {
+    let mut c = make_controller(false).await;
+
+    let inst = c.github.test_add_installation();
+    c.github.test_add_repository(inst.id, "test/my-repo");
+    c.github
+        .test_add_pull("test/my-repo", &["wiki/Article/en.md"]);
+    let pull_to_remove = c
+        .github
+        .test_add_pull("test/my-repo", &["wiki/Article/ko.md"]);
+
+    c.init().await.unwrap();
+    c.remove_pull("test/my-repo", pull_to_remove);
+
+    let repos = c.memory.pulls.lock().unwrap();
+    let first_repo = repos.get("test/my-repo").unwrap();
+    let cached_pr = first_repo.values().next().take().unwrap();
+    assert_eq!(cached_pr.id, 1);
+}

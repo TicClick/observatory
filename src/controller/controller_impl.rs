@@ -149,15 +149,17 @@ impl<T: GitHubInterface> Controller<T> {
         self.app = Some(self.github.app().await?);
         let installations = self.github.discover_installations().await?;
         for i in installations {
-            self.add_repositories(i.id, i.repositories).await;
+            self.add_repositories(i.id, self.github.cached_repositories(i.id))
+                .await;
         }
         Ok(())
     }
 
     /// Add an installation and fetch pull requests (one installation may have several repos).
     async fn add_installation(&self, installation: Installation) -> Result<()> {
-        let updated_installation = self.github.add_installation(installation).await?;
-        self.add_repositories(updated_installation.id, updated_installation.repositories)
+        let iid = installation.id;
+        self.github.add_installation(installation).await?;
+        self.add_repositories(iid, self.github.cached_repositories(iid))
             .await;
         Ok(())
     }
@@ -193,14 +195,9 @@ impl<T: GitHubInterface> Controller<T> {
 
     /// Remove an installation from cache and forget about its pull requests.
     fn delete_installation(&self, installation: Installation) {
+        let repos = self.github.cached_repositories(installation.id);
         self.github.remove_installation(&installation);
-        self.remove_repositories(installation.id, &installation.repositories);
-    }
-
-    /// Remove repository from memory, forgetting anything about it.
-    fn remove_repository(&self, r: &Repository) {
-        self.memory.drop_repository(&r.full_name);
-        self.conflicts.remove_repository(&r.full_name)
+        self.remove_repositories(installation.id, &repos);
     }
 
     /// Remove muliple repositories which the app has just lost its access to.
@@ -211,7 +208,8 @@ impl<T: GitHubInterface> Controller<T> {
                 r,
                 installation_id
             );
-            self.remove_repository(r);
+            self.memory.drop_repository(&r.full_name);
+            self.conflicts.remove_repository(&r.full_name);
         }
         self.github
             .remove_repositories(installation_id, repositories);

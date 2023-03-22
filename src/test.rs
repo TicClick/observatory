@@ -68,7 +68,7 @@ pub struct DummyGitHubClient {
     comments: Arc<Mutex<HashMap<String, HashMap<i32, Vec<structs::IssueComment>>>>>,
 
     last_repo_id: Arc<Mutex<i64>>,
-    repositories: Arc<Mutex<HashMap<i64, Vec<structs::Repository>>>>,
+    repos: Arc<Mutex<HashMap<i64, Vec<structs::Repository>>>>,
 }
 
 #[async_trait]
@@ -87,7 +87,7 @@ impl github::GitHubInterface for DummyGitHubClient {
             comments: Arc::default(),
 
             last_repo_id: Arc::new(Mutex::new(1)),
-            repositories: Arc::default(),
+            repos: Arc::default(),
         }
     }
 
@@ -96,52 +96,31 @@ impl github::GitHubInterface for DummyGitHubClient {
     }
 
     fn cached_installations(&self) -> Vec<structs::Installation> {
-        let mut ii: Vec<_> = self
-            .installations
+        self.installations
             .lock()
             .unwrap()
             .values()
             .cloned()
-            .collect();
-        for i in ii.iter_mut() {
-            i.repositories = self
-                .repositories
-                .lock()
-                .unwrap()
-                .entry(i.id)
-                .or_default()
-                .to_vec();
-        }
-        ii
+            .collect()
     }
 
     fn add_repositories(&self, installation_id: i64, mut repositories: Vec<structs::Repository>) {
-        if let Some(repos) = self.repositories.lock().unwrap().get_mut(&installation_id) {
-            let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
+        if let Some(repos) = self.repos.lock().unwrap().get_mut(&installation_id) {
+            let ids: Vec<_> = repos.iter().map(|r| r.id).collect();
             repos.retain(|r| !ids.contains(&r.id));
             repos.append(&mut repositories);
         }
     }
 
     fn remove_repositories(&self, installation_id: i64, repositories: &[structs::Repository]) {
-        if let Some(repos) = self.repositories.lock().unwrap().get_mut(&installation_id) {
+        if let Some(repos) = self.repos.lock().unwrap().get_mut(&installation_id) {
             let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
             repos.retain(|r| !ids.contains(&r.id));
         }
     }
 
     async fn discover_installations(&self) -> Result<Vec<structs::Installation>> {
-        let mut cached = self.cached_installations();
-        for i in cached.iter_mut() {
-            i.repositories = self
-                .repositories
-                .lock()
-                .unwrap()
-                .entry(i.id)
-                .or_default()
-                .to_vec();
-        }
-        Ok(cached)
+        Ok(self.cached_installations())
     }
 
     async fn app(&self) -> Result<structs::App> {
@@ -156,28 +135,27 @@ impl github::GitHubInterface for DummyGitHubClient {
         })
     }
 
-    // TODO: set repositories?
     async fn add_installation(
         &self,
-        mut installation: structs::Installation,
+        installation: structs::Installation,
     ) -> Result<structs::Installation> {
         self.installations
             .lock()
             .unwrap()
             .insert(installation.id, installation.clone());
-        installation.repositories = self
-            .repositories
-            .lock()
-            .unwrap()
-            .entry(installation.id)
-            .or_default()
-            .to_vec();
         Ok(installation)
+    }
+
+    fn cached_repositories(&self, installation_id: i64) -> Vec<structs::Repository> {
+        match self.repos.lock().unwrap().get(&installation_id) {
+            Some(v) => v.clone(),
+            None => Vec::new(),
+        }
     }
 
     fn remove_installation(&self, installation: &structs::Installation) {
         self.installations.lock().unwrap().remove(&installation.id);
-        self.repositories.lock().unwrap().remove(&installation.id);
+        self.repos.lock().unwrap().remove(&installation.id);
     }
 
     async fn pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>> {
@@ -294,7 +272,6 @@ impl DummyGitHubClient {
                 login: "test-user".into(),
             },
             app_id: 123,
-            repositories: Vec::new(),
         };
         self.installations
             .lock()
@@ -319,7 +296,7 @@ impl DummyGitHubClient {
         };
 
         *last_repo_id += 1;
-        self.repositories
+        self.repos
             .lock()
             .unwrap()
             .entry(installation_id)

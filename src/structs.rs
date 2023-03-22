@@ -80,9 +80,6 @@ pub struct Installation {
     pub id: i64,
     pub account: Actor,
     pub app_id: i64,
-
-    #[serde(default)]
-    pub repositories: Vec<Repository>,
 }
 
 // https://docs.github.com/en/rest/reference/apps#create-an-installation-access-token-for-an-app
