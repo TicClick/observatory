@@ -147,7 +147,7 @@ pub trait GitHubInterface {
     async fn installations(&self) -> Result<Vec<structs::Installation>>;
     fn cached_installations(&self) -> Vec<structs::Installation>;
     fn add_repositories(&self, installation_id: i64, repositories: Vec<structs::Repository>);
-    fn remove_repositories(&self, installation_id: i64, repositories: Vec<structs::Repository>);
+    fn remove_repositories(&self, installation_id: i64, repositories: &[structs::Repository]);
     async fn discover_installations(&self) -> Result<Vec<structs::Installation>>;
     async fn app(&self) -> Result<structs::App>;
     async fn add_installation(
@@ -433,7 +433,7 @@ impl GitHubInterface for Client {
         }
     }
 
-    fn remove_repositories(&self, installation_id: i64, repositories: Vec<structs::Repository>) {
+    fn remove_repositories(&self, installation_id: i64, repositories: &[structs::Repository]) {
         if let Some(installation) = self.installations.lock().unwrap().get_mut(&installation_id) {
             let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
             installation.repositories.retain(|r| !ids.contains(&r.id));

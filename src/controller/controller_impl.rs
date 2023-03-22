@@ -14,7 +14,7 @@ use crate::memory;
 use crate::structs::*;
 
 /// Controller is a representation of a GitHub App, which contains a per-repository cache of
-/// pull requests and corresponding `.diff` files.
+/// pull requests and corresponding `.diff` files. It is used from the facade, [`super::ControllerHandle`].
 ///
 /// The controller handles pull request updates and maintains the cache accordingly. After initialization,
 /// it is only aware of available repositories and current state of pull requests -- updates need to be passed by the controller owner.
@@ -27,6 +27,7 @@ pub(super) struct Controller<T>
 where
     T: GitHubInterface,
 {
+    /// The event queue with requests coming from the controller handle.
     receiver: mpsc::Receiver<ControllerRequest>,
 
     /// Information about a GitHub app (used to detect own comments).
@@ -46,12 +47,15 @@ where
 }
 
 impl<T: GitHubInterface> Controller<T> {
+    /// Start processing events one at a time. This function blocks until the receiver is destroyed, which happens
+    /// on handle destruction automatically.
     pub(super) async fn run_forever(&mut self) {
         while let Some(msg) = self.receiver.recv().await {
             self.handle_message(msg).await;
         }
     }
 
+    /// Dispatch the message from a handle to an appropriate method, and possibly return the call result.
     async fn handle_message(&mut self, message: ControllerRequest) {
         match message {
             ControllerRequest::Init { reply_to } => {
@@ -105,43 +109,19 @@ impl<T: GitHubInterface> Controller<T> {
                 installation_id,
                 repositories,
             } => {
-                self.github
-                    .add_repositories(installation_id, repositories.clone());
-                for r in repositories {
-                    log::debug!(
-                        "Adding repository {:?} for installation #{}",
-                        r,
-                        installation_id
-                    );
-                    self.add_repository(&r).await.unwrap_or_else(|e| {
-                        log::error!(
-                            "Repository {:?} for installation #{}: addition failed: {:?}",
-                            r,
-                            installation_id,
-                            e
-                        );
-                    });
-                }
+                self.add_repositories(installation_id, repositories).await;
             }
 
             ControllerRequest::InstallationRepositoriesRemoved {
                 installation_id,
                 repositories,
             } => {
-                for r in &repositories {
-                    log::debug!(
-                        "Removing repository {:?} for installation #{}",
-                        r,
-                        installation_id
-                    );
-                    self.remove_repository(r);
-                }
-                self.github
-                    .remove_repositories(installation_id, repositories);
+                self.remove_repositories(installation_id, &repositories);
             }
         }
     }
 
+    /// Create an unitialized controller.
     pub(super) fn new(
         receiver: mpsc::Receiver<ControllerRequest>,
         app_id: String,
@@ -169,9 +149,7 @@ impl<T: GitHubInterface> Controller<T> {
         self.app = Some(self.github.app().await?);
         let installations = self.github.discover_installations().await?;
         for i in installations {
-            for r in i.repositories {
-                self.add_repository(&r).await?;
-            }
+            self.add_repositories(i.id, i.repositories).await;
         }
         Ok(())
     }
@@ -179,10 +157,30 @@ impl<T: GitHubInterface> Controller<T> {
     /// Add an installation and fetch pull requests (one installation may have several repos).
     async fn add_installation(&self, installation: Installation) -> Result<()> {
         let updated_installation = self.github.add_installation(installation).await?;
-        for r in updated_installation.repositories {
-            self.add_repository(&r).await?;
-        }
+        self.add_repositories(updated_installation.id, updated_installation.repositories)
+            .await;
         Ok(())
+    }
+
+    /// Add several repositories the app just got an access to.
+    async fn add_repositories(&self, installation_id: i64, repositories: Vec<Repository>) {
+        self.github
+            .add_repositories(installation_id, repositories.clone());
+        for r in repositories {
+            log::debug!(
+                "Adding repository {:?} for installation #{}",
+                r,
+                installation_id
+            );
+            self.add_repository(&r).await.unwrap_or_else(|e| {
+                log::error!(
+                    "Repository {:?} for installation #{}: addition failed: {:?}",
+                    r,
+                    installation_id,
+                    e
+                );
+            });
+        }
     }
 
     /// Add a repository and fetch its pull requests.
@@ -196,15 +194,27 @@ impl<T: GitHubInterface> Controller<T> {
     /// Remove an installation from cache and forget about its pull requests.
     fn delete_installation(&self, installation: Installation) {
         self.github.remove_installation(&installation);
-        for r in installation.repositories {
-            self.remove_repository(&r);
-        }
+        self.remove_repositories(installation.id, &installation.repositories);
     }
 
     /// Remove repository from memory, forgetting anything about it.
     fn remove_repository(&self, r: &Repository) {
         self.memory.drop_repository(&r.full_name);
         self.conflicts.remove_repository(&r.full_name)
+    }
+
+    /// Remove muliple repositories which the app has just lost its access to.
+    fn remove_repositories(&self, installation_id: i64, repositories: &[Repository]) {
+        for r in repositories {
+            log::debug!(
+                "Removing repository {:?} for installation #{}",
+                r,
+                installation_id
+            );
+            self.remove_repository(r);
+        }
+        self.github
+            .remove_repositories(installation_id, repositories);
     }
 
     /// Purge a pull request from memory, excluding it from conflict detection.

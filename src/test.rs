@@ -99,7 +99,7 @@ impl github::GitHubInterface for DummyGitHubClient {
         }
     }
 
-    fn remove_repositories(&self, installation_id: i64, repositories: Vec<structs::Repository>) {
+    fn remove_repositories(&self, installation_id: i64, repositories: &[structs::Repository]) {
         if let Some(installation) = self.installations.lock().unwrap().get_mut(&installation_id) {
             let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
             installation.repositories.retain(|r| !ids.contains(&r.id));
