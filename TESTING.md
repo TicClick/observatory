@@ -7,6 +7,14 @@
 2. open its GitHub Store page[^1] and install it on a selected repository.
 3. list of events sent to the app is available on `https://github.com/settings/apps/{app name}/advanced`.
 
+## local tests
+
+```shell
+cargo test
+# coverage reporting via https://github.com/xd009642/tarpaulin
+cargo tarpaulin --out html
+```
+
 ## nginx setup
 
 see `dev/example.nginx` to avoid being a web framework canary
