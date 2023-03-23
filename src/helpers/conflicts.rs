@@ -348,5 +348,4 @@ impl Storage {
 }
 
 #[cfg(test)]
-#[path = "conflicts_test.rs"]
-pub(crate) mod conflicts_test;
+mod tests;

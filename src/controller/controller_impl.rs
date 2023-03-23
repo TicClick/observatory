@@ -2,17 +2,19 @@
 use std::collections::HashMap;
 
 use eyre::Result;
+use tokio::sync::mpsc;
 
 use crate::config;
+use crate::controller::ControllerRequest;
 use crate::github::{GitHub, GitHubInterface};
 use crate::helpers::comments::CommentHeader;
 use crate::helpers::conflicts::{self, ConflictType};
 use crate::helpers::ToMarkdown;
-use crate::structs::IssueComment;
-use crate::{memory, structs};
+use crate::memory;
+use crate::structs::*;
 
 /// Controller is a representation of a GitHub App, which contains a per-repository cache of
-/// pull requests and corresponding `.diff` files.
+/// pull requests and corresponding `.diff` files. It is used from the facade, [`super::ControllerHandle`].
 ///
 /// The controller handles pull request updates and maintains the cache accordingly. After initialization,
 /// it is only aware of available repositories and current state of pull requests -- updates need to be passed by the controller owner.
@@ -20,13 +22,16 @@ use crate::{memory, structs};
 // The controller checks incoming updates against memory and attempts to determine whether there are conflicts on article levels.
 /// (for details, see [`ConflictType`]). After that, it leaves comments on the pull request which depends on the changes; typically, that is
 /// a translation, whose owner needs to be made aware of changes they may be missing.
-#[derive(Debug, Clone)]
-pub struct Controller<T>
+#[derive(Debug)]
+pub(super) struct Controller<T>
 where
     T: GitHubInterface,
 {
+    /// The event queue with requests coming from the controller handle.
+    receiver: mpsc::Receiver<ControllerRequest>,
+
     /// Information about a GitHub app (used to detect own comments).
-    pub app: Option<structs::App>,
+    app: Option<App>,
 
     /// GitHub API client -- see [`github::Client`] for details.
     github: T,
@@ -42,8 +47,81 @@ where
 }
 
 impl<T: GitHubInterface> Controller<T> {
-    pub fn new(app_id: String, private_key: String, config: config::Controller) -> Self {
+    /// Start processing events one at a time. This function blocks until the receiver is destroyed, which happens
+    /// on handle destruction automatically.
+    pub(super) async fn run_forever(&mut self) {
+        while let Some(msg) = self.receiver.recv().await {
+            self.handle_message(msg).await;
+        }
+    }
+
+    /// Dispatch the message from a handle to an appropriate method, and possibly return the call result.
+    async fn handle_message(&mut self, message: ControllerRequest) {
+        match message {
+            ControllerRequest::Init { reply_to } => {
+                reply_to.send(self.init().await).unwrap();
+            }
+
+            ControllerRequest::PullRequestUpdated {
+                full_repo_name,
+                pull_request,
+                trigger_updates,
+            } => {
+                let pull_number = pull_request.number;
+                self.add_pull(&full_repo_name, *pull_request, trigger_updates)
+                    .await
+                    .unwrap_or_else(|e| {
+                        log::error!(
+                            "Pull #{}: failed to update information and trigger comments: {:?}",
+                            pull_number,
+                            e
+                        );
+                    })
+            }
+            ControllerRequest::PullRequestClosed {
+                full_repo_name,
+                pull_request,
+            } => {
+                self.remove_pull(&full_repo_name, *pull_request);
+            }
+
+            ControllerRequest::InstallationCreated { installation } => {
+                let iid = installation.id;
+                self.add_installation(*installation)
+                    .await
+                    .unwrap_or_else(|e| {
+                        log::error!("Installation #{}: addition failed: {:?}", iid, e);
+                    });
+            }
+            ControllerRequest::InstallationDeleted { installation } => {
+                self.delete_installation(*installation)
+            }
+
+            ControllerRequest::InstallationRepositoriesAdded {
+                installation_id,
+                repositories,
+            } => {
+                self.add_repositories(installation_id, repositories).await;
+            }
+
+            ControllerRequest::InstallationRepositoriesRemoved {
+                installation_id,
+                repositories,
+            } => {
+                self.remove_repositories(installation_id, &repositories);
+            }
+        }
+    }
+
+    /// Create an unitialized controller.
+    pub(super) fn new(
+        receiver: mpsc::Receiver<ControllerRequest>,
+        app_id: String,
+        private_key: String,
+        config: config::Controller,
+    ) -> Self {
         Self {
+            receiver,
             app: None,
             github: T::new(app_id, private_key),
             memory: memory::Memory::new(),
@@ -52,40 +130,53 @@ impl<T: GitHubInterface> Controller<T> {
         }
     }
 
-    /// Obtain list of current GitHub App installations and their repositories.
-    pub fn installations(&self) -> Vec<structs::Installation> {
-        self.github.cached_installations()
-    }
-
-    /// Update list of current GitHub App installations and their repositories after handling an update event.
-    pub fn update_cached_installation(&self, installation: structs::Installation) {
-        self.github.update_cached_installation(installation);
-    }
-
     /// Build the in-memory pull request cache on start-up. This will consume a lot of GitHub API quota,
     /// but fighting a stale database cache is left as an exercise for another day.
-    pub async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self) -> Result<()> {
         self.app = Some(self.github.app().await?);
+        log::info!("GitHub application: {:?}", self.app.as_ref().unwrap());
+
         let installations = self.github.discover_installations().await?;
+        log::info!("Active installations: {:?}", installations);
         for i in installations {
-            for r in i.repositories {
-                self.add_repository(&r).await?;
-            }
+            self.add_repositories(i.id, self.github.cached_repositories(i.id))
+                .await;
         }
         Ok(())
     }
 
     /// Add an installation and fetch pull requests (one installation may have several repos).
-    pub async fn add_installation(&self, installation: structs::Installation) -> Result<()> {
-        let updated_installation = self.github.add_installation(installation).await?;
-        for r in updated_installation.repositories {
-            self.add_repository(&r).await?;
-        }
+    async fn add_installation(&self, installation: Installation) -> Result<()> {
+        let iid = installation.id;
+        self.github.add_installation(installation).await?;
+        self.add_repositories(iid, self.github.cached_repositories(iid))
+            .await;
         Ok(())
     }
 
+    /// Add several repositories the app just got an access to.
+    async fn add_repositories(&self, installation_id: i64, repositories: Vec<Repository>) {
+        self.github
+            .add_repositories(installation_id, repositories.clone());
+        for r in repositories {
+            log::debug!(
+                "Adding repository {:?} for installation #{}",
+                r,
+                installation_id
+            );
+            self.add_repository(&r).await.unwrap_or_else(|e| {
+                log::error!(
+                    "Repository {:?} for installation #{}: addition failed: {:?}",
+                    r,
+                    installation_id,
+                    e
+                );
+            });
+        }
+    }
+
     /// Add a repository and fetch its pull requests.
-    pub async fn add_repository(&self, r: &structs::Repository) -> Result<()> {
+    async fn add_repository(&self, r: &Repository) -> Result<()> {
         for p in self.github.pulls(&r.full_name).await? {
             self.add_pull(&r.full_name, p, false).await?;
         }
@@ -93,23 +184,31 @@ impl<T: GitHubInterface> Controller<T> {
     }
 
     /// Remove an installation from cache and forget about its pull requests.
-    pub fn remove_installation(&self, installation: structs::Installation) {
+    fn delete_installation(&self, installation: Installation) {
+        let repos = self.github.cached_repositories(installation.id);
         self.github.remove_installation(&installation);
-        for r in installation.repositories {
-            self.remove_repository(&r);
-        }
+        self.remove_repositories(installation.id, &repos);
     }
 
-    /// Remove repository from memory, forgetting anything about it.
-    pub fn remove_repository(&self, r: &structs::Repository) {
-        self.memory.drop_repository(&r.full_name);
-        self.conflicts.remove_repository(&r.full_name)
+    /// Remove muliple repositories which the app has just lost its access to.
+    fn remove_repositories(&self, installation_id: i64, repositories: &[Repository]) {
+        for r in repositories {
+            log::debug!(
+                "Removing repository {:?} for installation #{}",
+                r,
+                installation_id
+            );
+            self.memory.drop_repository(&r.full_name);
+            self.conflicts.remove_repository(&r.full_name);
+        }
+        self.github
+            .remove_repositories(installation_id, repositories);
     }
 
     /// Purge a pull request from memory, excluding it from conflict detection.
     ///
     /// This should be done only when a pull request is closed or merged.
-    pub fn remove_pull(&self, full_repo_name: &str, closed_pull: structs::PullRequest) {
+    fn remove_pull(&self, full_repo_name: &str, closed_pull: PullRequest) {
         self.memory.remove_pull(full_repo_name, &closed_pull);
         self.conflicts
             .remove_conflicts_by_pull(full_repo_name, closed_pull.number);
@@ -120,10 +219,10 @@ impl<T: GitHubInterface> Controller<T> {
     ///
     /// If `trigger_updates` is set, check if the update conflicts with existing pull requests,
     /// and make its author aware (or other PRs' owners, in rare cases). For details, see [`helpers::conflicts::Storage`].
-    pub async fn add_pull(
+    async fn add_pull(
         &self,
         full_repo_name: &str,
-        mut new_pull: structs::PullRequest,
+        mut new_pull: PullRequest,
         trigger_updates: bool,
     ) -> Result<()> {
         let diff = self
@@ -134,7 +233,7 @@ impl<T: GitHubInterface> Controller<T> {
         self.memory.insert_pull(full_repo_name, new_pull.clone());
 
         if let Some(pulls_map) = self.memory.pulls(full_repo_name) {
-            let mut pulls: Vec<structs::PullRequest> = pulls_map
+            let mut pulls: Vec<PullRequest> = pulls_map
                 .into_values()
                 .filter(|other| other.number != new_pull.number)
                 .collect();
@@ -194,7 +293,7 @@ impl<T: GitHubInterface> Controller<T> {
     ///
     /// Comments already left by the bot are reused for updates, both to avoid spam and make notification process easier.
     /// Comments about obsolete conflicts are removed; the lists of conflicts to update and to remove have no intersection.
-    pub async fn send_updates(
+    async fn send_updates(
         &self,
         pending: HashMap<i32, Vec<conflicts::Conflict>>,
         to_remove: HashMap<i32, Vec<conflicts::Conflict>>,
@@ -306,7 +405,7 @@ impl<T: GitHubInterface> Controller<T> {
     /// A helper for checking if the comment is made by the bot itself.
     ///
     /// Curiously, there is no way of telling this from the comment's JSON.
-    fn has_control_over(&self, user: &structs::Actor) -> bool {
+    fn has_control_over(&self, user: &Actor) -> bool {
         if let Some(app) = &self.app {
             user.login == format!("{}[bot]", &app.slug)
         } else {
@@ -316,5 +415,4 @@ impl<T: GitHubInterface> Controller<T> {
 }
 
 #[cfg(test)]
-#[path = "controller_test.rs"]
-pub(crate) mod tests;
+mod tests;

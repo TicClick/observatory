@@ -58,11 +58,17 @@ pub struct DummyGitHubClient {
     app_id: String,
 
     // Github mock information
+    last_installation_id: Arc<Mutex<i64>>,
     installations: Arc<Mutex<HashMap<i64, structs::Installation>>>,
+
     last_pull_id: Arc<Mutex<i64>>,
     pulls: Arc<Mutex<HashMap<String, Vec<structs::PullRequest>>>>,
+
     last_comment_id: Arc<Mutex<i64>>,
     comments: Arc<Mutex<HashMap<String, HashMap<i32, Vec<structs::IssueComment>>>>>,
+
+    last_repo_id: Arc<Mutex<i64>>,
+    repos: Arc<Mutex<HashMap<i64, Vec<structs::Repository>>>>,
 }
 
 #[async_trait]
@@ -70,11 +76,18 @@ impl github::GitHubInterface for DummyGitHubClient {
     fn new(app_id: String, _key: String) -> Self {
         Self {
             app_id,
+
+            last_installation_id: Arc::new(Mutex::new(1)),
             installations: Arc::default(),
+
             last_pull_id: Arc::new(Mutex::new(1)),
             pulls: Arc::default(),
+
             last_comment_id: Arc::new(Mutex::new(1)),
             comments: Arc::default(),
+
+            last_repo_id: Arc::new(Mutex::new(1)),
+            repos: Arc::default(),
         }
     }
 
@@ -91,14 +104,21 @@ impl github::GitHubInterface for DummyGitHubClient {
             .collect()
     }
 
-    fn update_cached_installation(&self, installation: structs::Installation) {
-        self.installations
-            .lock()
-            .unwrap()
-            .insert(installation.id, installation.clone());
+    fn add_repositories(&self, installation_id: i64, mut repositories: Vec<structs::Repository>) {
+        if let Some(repos) = self.repos.lock().unwrap().get_mut(&installation_id) {
+            let ids: Vec<_> = repos.iter().map(|r| r.id).collect();
+            repos.retain(|r| !ids.contains(&r.id));
+            repos.append(&mut repositories);
+        }
     }
 
-    // TODO: set repositories?
+    fn remove_repositories(&self, installation_id: i64, repositories: &[structs::Repository]) {
+        if let Some(repos) = self.repos.lock().unwrap().get_mut(&installation_id) {
+            let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
+            repos.retain(|r| !ids.contains(&r.id));
+        }
+    }
+
     async fn discover_installations(&self) -> Result<Vec<structs::Installation>> {
         Ok(self.cached_installations())
     }
@@ -115,7 +135,6 @@ impl github::GitHubInterface for DummyGitHubClient {
         })
     }
 
-    // TODO: set repositories?
     async fn add_installation(
         &self,
         installation: structs::Installation,
@@ -127,8 +146,16 @@ impl github::GitHubInterface for DummyGitHubClient {
         Ok(installation)
     }
 
+    fn cached_repositories(&self, installation_id: i64) -> Vec<structs::Repository> {
+        match self.repos.lock().unwrap().get(&installation_id) {
+            Some(v) => v.clone(),
+            None => Vec::new(),
+        }
+    }
+
     fn remove_installation(&self, installation: &structs::Installation) {
         self.installations.lock().unwrap().remove(&installation.id);
+        self.repos.lock().unwrap().remove(&installation.id);
     }
 
     async fn pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>> {
@@ -236,6 +263,48 @@ impl github::GitHubInterface for DummyGitHubClient {
 }
 
 impl DummyGitHubClient {
+    pub fn test_add_installation(&self) -> structs::Installation {
+        let mut last_installation_id = self.last_installation_id.lock().unwrap();
+        let inst = structs::Installation {
+            id: *last_installation_id,
+            account: structs::Actor {
+                id: 12,
+                login: "test-user".into(),
+            },
+            app_id: 123,
+        };
+        self.installations
+            .lock()
+            .unwrap()
+            .insert(*last_installation_id, inst.clone());
+        *last_installation_id += 1;
+        inst
+    }
+
+    pub fn test_add_repository(
+        &self,
+        installation_id: i64,
+        full_repo_name: &str,
+    ) -> structs::Repository {
+        let mut last_repo_id = self.last_repo_id.lock().unwrap();
+        let r = structs::Repository {
+            id: *last_repo_id,
+            name: full_repo_name.split("/").last().unwrap().into(),
+            full_name: full_repo_name.into(),
+            fork: None,
+            owner: None,
+        };
+
+        *last_repo_id += 1;
+        self.repos
+            .lock()
+            .unwrap()
+            .entry(installation_id)
+            .or_default()
+            .push(r.clone());
+        r
+    }
+
     pub fn test_add_pull(&self, full_repo_name: &str, file_names: &[&str]) -> structs::PullRequest {
         let mut last_pull_id = self.last_pull_id.lock().unwrap();
         let pull = make_pull(*last_pull_id, file_names);

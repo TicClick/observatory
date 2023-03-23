@@ -146,7 +146,8 @@ pub trait GitHubInterface {
     fn new(app_id: String, key: String) -> Self;
     async fn installations(&self) -> Result<Vec<structs::Installation>>;
     fn cached_installations(&self) -> Vec<structs::Installation>;
-    fn update_cached_installation(&self, installation: structs::Installation);
+    fn add_repositories(&self, installation_id: i64, repositories: Vec<structs::Repository>);
+    fn remove_repositories(&self, installation_id: i64, repositories: &[structs::Repository]);
     async fn discover_installations(&self) -> Result<Vec<structs::Installation>>;
     async fn app(&self) -> Result<structs::App>;
     async fn add_installation(
@@ -154,6 +155,7 @@ pub trait GitHubInterface {
         mut installation: structs::Installation,
     ) -> Result<structs::Installation>;
     fn remove_installation(&self, installation: &structs::Installation);
+    fn cached_repositories(&self, installation_id: i64) -> Vec<structs::Repository>;
     async fn pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>>;
     async fn post_comment(
         &self,
@@ -188,6 +190,7 @@ pub struct Client {
 
     tokens: Arc<Mutex<HashMap<TokenType, Token>>>,
     pub installations: Arc<Mutex<HashMap<i64, structs::Installation>>>,
+    repos: Arc<Mutex<HashMap<i64, Vec<structs::Repository>>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -336,9 +339,9 @@ impl Client {
 
     async fn pick_token(&self, full_repo_name: &str) -> Result<String> {
         let mut installation_id = None;
-        for (k, v) in self.installations.lock().unwrap().iter() {
-            if v.repositories.iter().any(|r| r.full_name == full_repo_name) {
-                installation_id = Some(*k);
+        for (iid, repos) in self.repos.lock().unwrap().iter() {
+            if repos.iter().any(|r| r.full_name == full_repo_name) {
+                installation_id = Some(*iid);
                 break;
             }
         }
@@ -403,6 +406,7 @@ impl GitHubInterface for Client {
             http_client: reqwest::Client::new(),
             tokens: Arc::new(Mutex::new(HashMap::new())),
             installations: Arc::new(Mutex::new(HashMap::new())),
+            repos: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -424,11 +428,19 @@ impl GitHubInterface for Client {
             .collect()
     }
 
-    fn update_cached_installation(&self, installation: structs::Installation) {
-        self.installations
-            .lock()
-            .unwrap()
-            .insert(installation.id, installation);
+    fn add_repositories(&self, installation_id: i64, mut repositories: Vec<structs::Repository>) {
+        if let Some(repos) = self.repos.lock().unwrap().get_mut(&installation_id) {
+            let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
+            repos.retain(|r| !ids.contains(&r.id));
+            repos.append(&mut repositories);
+        }
+    }
+
+    fn remove_repositories(&self, installation_id: i64, repositories: &[structs::Repository]) {
+        if let Some(repos) = self.repos.lock().unwrap().get_mut(&installation_id) {
+            let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
+            repos.retain(|r| !ids.contains(&r.id));
+        }
     }
 
     // TODO: confirm that this is actually needed (see similar stuff below)
@@ -453,7 +465,7 @@ impl GitHubInterface for Client {
 
     async fn add_installation(
         &self,
-        mut installation: structs::Installation,
+        installation: structs::Installation,
     ) -> Result<structs::Installation> {
         match self.get_installation_token(installation.id).await {
             Err(e) => {
@@ -475,8 +487,7 @@ impl GitHubInterface for Client {
                         Err(e)
                     }
                     Ok(response) => {
-                        installation.repositories = response.repositories;
-                        self.update_cached_installation(installation.clone());
+                        self.add_repositories(installation.id, response.repositories);
                         Ok(installation)
                     }
                 }
@@ -484,8 +495,16 @@ impl GitHubInterface for Client {
         }
     }
 
+    fn cached_repositories(&self, installation_id: i64) -> Vec<structs::Repository> {
+        match self.repos.lock().unwrap().get(&installation_id) {
+            Some(v) => v.clone(),
+            None => Vec::new(),
+        }
+    }
+
     fn remove_installation(&self, installation: &structs::Installation) {
         self.installations.lock().unwrap().remove(&installation.id);
+        self.repos.lock().unwrap().remove(&installation.id);
         self.tokens
             .lock()
             .unwrap()
