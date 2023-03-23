@@ -4,7 +4,7 @@ use crate::helpers::{comments::CommentHeader, conflicts::ConflictType};
 
 #[tokio::test]
 async fn test_no_conflict_no_comment() {
-    let c = make_controller(true).await;
+    let c = new_controller(true).await;
     let p1 = c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]);
     c.add_pull(
         "test/repo",
@@ -23,7 +23,7 @@ async fn test_no_conflict_no_comment() {
 
 #[tokio::test]
 async fn test_one_conflict_one_comment() {
-    let c = make_controller(true).await;
+    let c = new_controller(true).await;
     let p1 = c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]);
     let p2 = c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]);
 
@@ -59,7 +59,7 @@ async fn test_one_conflict_one_comment() {
 
 #[tokio::test]
 async fn test_one_conflict_one_valid_header() {
-    let c = make_controller(true).await;
+    let c = new_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
@@ -91,7 +91,7 @@ async fn test_one_conflict_one_valid_header() {
 
 #[tokio::test]
 async fn test_one_pull_and_conflict_one_comment() {
-    let c = make_controller(true).await;
+    let c = new_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
         c.github.test_add_pull(
@@ -142,7 +142,7 @@ async fn test_one_pull_and_conflict_one_comment() {
 
 #[tokio::test]
 async fn test_one_pull_and_conflict_one_comment_updated() {
-    let c = make_controller(true).await;
+    let c = new_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
         c.github.test_add_pull(
@@ -204,7 +204,7 @@ async fn test_one_pull_and_conflict_one_comment_updated() {
 
 #[tokio::test]
 async fn test_post_comment_per_pull_and_conflict_combination() {
-    let c = make_controller(true).await;
+    let c = new_controller(true).await;
     let pulls = [
         c.github
             .test_add_pull("test/repo", &["wiki/Article/en.md", "wiki/Article_2/ru.md"]),
@@ -268,7 +268,7 @@ async fn test_post_comment_per_pull_and_conflict_combination() {
 
 #[tokio::test]
 async fn test_obsolete_comment_is_removed() {
-    let c = make_controller(true).await;
+    let c = new_controller(true).await;
     let pulls = [
         c.github
             .test_add_pull("test/repo", &["wiki/Article/en.md", "wiki/Article_2/ru.md"]),
@@ -299,7 +299,7 @@ async fn test_obsolete_comment_is_removed() {
 
 #[tokio::test]
 async fn test_only_target_comment_is_removed() {
-    let c = make_controller(true).await;
+    let c = new_controller(true).await;
     let pulls = [
         c.github.test_add_pull(
             "test/repo",
@@ -345,7 +345,7 @@ async fn test_only_target_comment_is_removed() {
 
 #[tokio::test]
 async fn test_new_comment_is_posted_after_removal_in_different_pull() {
-    let c = make_controller(true).await;
+    let c = new_controller(true).await;
     let pulls = [
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),

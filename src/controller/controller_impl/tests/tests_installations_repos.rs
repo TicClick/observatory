@@ -4,7 +4,7 @@ use crate::structs::*;
 
 #[tokio::test]
 async fn test_add_installations() {
-    let c = make_controller(true).await;
+    let c = new_controller(true).await;
     let mut installations = vec![];
     for i in 0..10 {
         let inst = Installation {
@@ -25,7 +25,7 @@ async fn test_add_installations() {
 
 #[tokio::test]
 async fn test_add_installation_repositories_fetched() {
-    let c = make_controller(true).await;
+    let c = new_controller(true).await;
     let r1 = c.github.test_add_repository(1, "test/repo");
     let r2 = c.github.test_add_repository(1, "test/another-repo");
 
@@ -46,7 +46,7 @@ async fn test_add_installation_repositories_fetched() {
 
 #[tokio::test]
 async fn test_add_installation_pull_requests_fetched() {
-    let c = make_controller(true).await;
+    let c = new_controller(true).await;
 
     c.github.test_add_repository(1, "test/my-repo");
     let pulls = [
@@ -80,7 +80,7 @@ async fn test_add_installation_pull_requests_fetched() {
 
 #[tokio::test]
 async fn test_add_repository_pull_requests_fetched() {
-    let c = make_controller(true).await;
+    let c = new_controller(true).await;
 
     let repo = c.github.test_add_repository(1, "test/my-repo");
     let pulls = [
@@ -105,7 +105,7 @@ async fn test_add_repository_pull_requests_fetched() {
 
 #[tokio::test]
 async fn test_add_multiple_repositories_pull_requests_fetched() {
-    let c = make_controller(true).await;
+    let c = new_controller(true).await;
 
     let repos = [
         c.github.test_add_repository(1, "test/my-repo"),
@@ -146,7 +146,7 @@ async fn test_add_multiple_repositories_pull_requests_fetched() {
 
 #[tokio::test]
 async fn test_repositories_fetched_during_init() {
-    let mut c = make_controller(false).await;
+    let mut c = new_controller(false).await;
 
     let inst = c.github.test_add_installation();
     let repositories = [
@@ -163,7 +163,7 @@ async fn test_repositories_fetched_during_init() {
 
 #[tokio::test]
 async fn test_pulls_fetched_during_init() {
-    let mut c = make_controller(false).await;
+    let mut c = new_controller(false).await;
 
     let inst = c.github.test_add_installation();
     c.github.test_add_repository(inst.id, "test/my-repo");
@@ -204,7 +204,7 @@ async fn test_pulls_fetched_during_init() {
 
 #[tokio::test]
 async fn test_delete_installation() {
-    let mut c = make_controller(false).await;
+    let mut c = new_controller(false).await;
 
     let inst = c.github.test_add_installation();
     c.github.test_add_repository(inst.id, "test/my-repo");
@@ -228,7 +228,7 @@ async fn test_delete_installation() {
 
 #[tokio::test]
 async fn test_remove_repositories() {
-    let mut c = make_controller(false).await;
+    let mut c = new_controller(false).await;
 
     let inst = c.github.test_add_installation();
     let r1 = c.github.test_add_repository(inst.id, "test/my-repo");
@@ -262,7 +262,7 @@ async fn test_remove_repositories() {
 
 #[tokio::test]
 async fn test_remove_pull() {
-    let mut c = make_controller(false).await;
+    let mut c = new_controller(false).await;
 
     let inst = c.github.test_add_installation();
     c.github.test_add_repository(inst.id, "test/my-repo");
