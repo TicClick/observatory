@@ -12,9 +12,27 @@ async fn test_has_control_over() {
         id: 1,
         login: "test-app[bot]".to_string()
     }));
+
     assert!(!c.has_control_over(&Actor {
         id: 1,
         login: "test-app".to_string()
+    }));
+    assert!(!c.has_control_over(&Actor {
+        id: 1,
+        login: "test-app[bot]extra".to_string()
+    }));
+    assert!(!c.has_control_over(&Actor {
+        id: 2,
+        login: "ppy".to_string()
+    }));
+}
+
+#[tokio::test]
+async fn test_has_control_over_uninitialized() {
+    let c = new_controller(false).await;
+    assert!(!c.has_control_over(&Actor {
+        id: 1,
+        login: "test-app[bot]".to_string()
     }));
     assert!(!c.has_control_over(&Actor {
         id: 2,
