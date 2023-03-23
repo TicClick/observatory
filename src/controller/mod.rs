@@ -13,12 +13,6 @@ pub enum ControllerRequest {
     Init {
         reply_to: oneshot::Sender<Result<()>>,
     },
-    GetInstallations {
-        reply_to: oneshot::Sender<Vec<Installation>>,
-    },
-    GetApp {
-        reply_to: oneshot::Sender<Option<App>>,
-    },
 
     PullRequestUpdated {
         full_repo_name: String,
@@ -79,24 +73,6 @@ impl ControllerHandle {
             .send(ControllerRequest::Init { reply_to: tx })
             .await;
         rx.await?
-    }
-
-    pub async fn get_installations(&self) -> Vec<Installation> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .sender
-            .send(ControllerRequest::GetInstallations { reply_to: tx })
-            .await;
-        rx.await.unwrap()
-    }
-
-    pub async fn get_app(&self) -> Option<App> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .sender
-            .send(ControllerRequest::GetApp { reply_to: tx })
-            .await;
-        rx.await.unwrap()
     }
 
     pub async fn add_pull(

@@ -108,11 +108,6 @@ async fn main() -> Result<()> {
         settings.controller.clone(),
     );
     controller_handle.init().await?;
-    log::info!(
-        "Active installations: {:?}",
-        controller_handle.get_installations().await
-    );
-    log::debug!("GitHub App: {:?}", controller_handle.get_app().await);
 
     let ls = viz::types::Limits::new()
         .insert("bytes", DEFAULT_DATA_LIMIT)

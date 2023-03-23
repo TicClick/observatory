@@ -21,10 +21,6 @@ async fn test_add_installations() {
     let mut v = c.github.installations().await.unwrap();
     v.sort_by_key(|i| i.id);
     assert_eq!(v, installations);
-
-    let mut vv = c.installations();
-    vv.sort_by_key(|i| i.id);
-    assert_eq!(vv, installations);
 }
 
 #[tokio::test]
@@ -225,7 +221,7 @@ async fn test_delete_installation() {
     c.init().await.unwrap();
     c.delete_installation(inst);
 
-    assert!(c.installations().is_empty());
+    assert!(c.github.cached_installations().is_empty());
 
     assert!(c.memory.pulls.lock().unwrap().is_empty());
 }
@@ -250,7 +246,7 @@ async fn test_remove_repositories() {
     c.init().await.unwrap();
     c.remove_repositories(inst.id, &[r1]);
 
-    assert!(!c.installations().is_empty());
+    assert!(!c.github.cached_installations().is_empty());
 
     let second_repo_only = c.memory.pulls.lock().unwrap();
     assert_eq!(second_repo_only.len(), 1);

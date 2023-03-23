@@ -62,14 +62,6 @@ impl<T: GitHubInterface> Controller<T> {
                 reply_to.send(self.init().await).unwrap();
             }
 
-            ControllerRequest::GetInstallations { reply_to } => {
-                reply_to.send(self.installations()).unwrap();
-            }
-
-            ControllerRequest::GetApp { reply_to } => {
-                reply_to.send(self.app.clone()).unwrap();
-            }
-
             ControllerRequest::PullRequestUpdated {
                 full_repo_name,
                 pull_request,
@@ -138,16 +130,14 @@ impl<T: GitHubInterface> Controller<T> {
         }
     }
 
-    /// Obtain list of current GitHub App installations and their repositories.
-    fn installations(&self) -> Vec<Installation> {
-        self.github.cached_installations()
-    }
-
     /// Build the in-memory pull request cache on start-up. This will consume a lot of GitHub API quota,
     /// but fighting a stale database cache is left as an exercise for another day.
     async fn init(&mut self) -> Result<()> {
         self.app = Some(self.github.app().await?);
+        log::info!("GitHub application: {:?}", self.app.as_ref().unwrap());
+
         let installations = self.github.discover_installations().await?;
+        log::info!("Active installations: {:?}", installations);
         for i in installations {
             self.add_repositories(i.id, self.github.cached_repositories(i.id))
                 .await;
