@@ -150,14 +150,17 @@ impl<T: GitHubInterface> Controller<T> {
     /// Build the in-memory pull request cache on start-up. This will consume a lot of GitHub API quota,
     /// but fighting a stale database cache is left as an exercise for another day.
     async fn init(&mut self) -> Result<()> {
-        self.app = Some(self.github.app().await?);
+        self.app = Some(self.github.read_app().await?);
         log::info!("GitHub application: {:?}", self.app.as_ref().unwrap());
 
-        let installations = self.github.discover_installations().await?;
+        let installations = self.github.read_installations().await?;
         log::info!("Active installations: {:?}", installations);
         for i in installations {
-            self.add_repositories(i.id, self.github.cached_repositories(i.id))
-                .await;
+            let id = i.id;
+            match self.add_installation(i).await {
+                Err(e) => log::error!("Failed to add installation {}: {}", id, e),
+                Ok(_) => log::info!("Processed repositories from installation {}", id)
+            }
         }
         Ok(())
     }
@@ -165,7 +168,7 @@ impl<T: GitHubInterface> Controller<T> {
     /// Add an installation and fetch pull requests (one installation may have several repos).
     async fn add_installation(&self, installation: Installation) -> Result<()> {
         let iid = installation.id;
-        self.github.add_installation(installation).await?;
+        self.github.read_and_cache_installation_repos(installation).await?;
         self.add_repositories(iid, self.github.cached_repositories(iid))
             .await;
         Ok(())
@@ -173,8 +176,6 @@ impl<T: GitHubInterface> Controller<T> {
 
     /// Add several repositories the app just got an access to.
     async fn add_repositories(&self, installation_id: i64, repositories: Vec<Repository>) {
-        self.github
-            .add_repositories(installation_id, repositories.clone());
         for r in repositories {
             log::debug!(
                 "Adding repository {:?} for installation #{}",
@@ -194,7 +195,7 @@ impl<T: GitHubInterface> Controller<T> {
 
     /// Add a repository and fetch its pull requests.
     async fn add_repository(&self, r: &Repository) -> Result<()> {
-        for p in self.github.pulls(&r.full_name).await? {
+        for p in self.github.read_pulls(&r.full_name).await? {
             self.upsert_pull(&r.full_name, p, false).await?;
         }
         Ok(())
@@ -339,7 +340,7 @@ impl<T: GitHubInterface> Controller<T> {
         for pull_number in pending.keys().chain(to_remove.keys()) {
             let existing_comments = self
                 .github
-                .list_comments(full_repo_name, *pull_number)
+                .read_comments(full_repo_name, *pull_number)
                 .await?
                 .into_iter()
                 .filter(|c| self.has_control_over(&c.user));

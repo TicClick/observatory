@@ -15,7 +15,7 @@ async fn test_no_conflict_no_comment() {
     .unwrap();
     let comments = c
         .github
-        .list_comments("test/repo", p1.number)
+        .read_comments("test/repo", p1.number)
         .await
         .unwrap();
     assert!(comments.is_empty());
@@ -44,14 +44,14 @@ async fn test_one_conflict_one_comment() {
 
     let first_pull_comments = c
         .github
-        .list_comments("test/repo", p1.number)
+        .read_comments("test/repo", p1.number)
         .await
         .unwrap();
     assert!(first_pull_comments.is_empty());
 
     let second_pull_comments = c
         .github
-        .list_comments("test/repo", p2.number)
+        .read_comments("test/repo", p2.number)
         .await
         .unwrap();
     assert_eq!(second_pull_comments.len(), 1);
@@ -76,7 +76,7 @@ async fn test_one_conflict_one_valid_header() {
 
     let second_pull_comments = c
         .github
-        .list_comments("test/repo", pulls[1].number)
+        .read_comments("test/repo", pulls[1].number)
         .await
         .unwrap();
     let header = CommentHeader::from_comment(&second_pull_comments.first().unwrap().body).unwrap();
@@ -134,7 +134,7 @@ async fn test_one_pull_and_conflict_one_comment() {
 
     let second_pull_comments = c
         .github
-        .list_comments("test/repo", pulls[1].number)
+        .read_comments("test/repo", pulls[1].number)
         .await
         .unwrap();
     assert_eq!(second_pull_comments.len(), 1);
@@ -185,7 +185,7 @@ async fn test_one_pull_and_conflict_one_comment_updated() {
 
     let second_pull_comments = c
         .github
-        .list_comments("test/repo", pulls[1].number)
+        .read_comments("test/repo", pulls[1].number)
         .await
         .unwrap();
     let only_comment = &second_pull_comments.first().unwrap().body;
@@ -234,7 +234,7 @@ async fn test_post_comment_per_pull_and_conflict_combination() {
 
     let third_pull_comments = c
         .github
-        .list_comments("test/repo", pulls[2].number)
+        .read_comments("test/repo", pulls[2].number)
         .await
         .unwrap();
     assert_eq!(third_pull_comments.len(), 4);
@@ -291,7 +291,7 @@ async fn test_obsolete_comment_is_removed() {
         .unwrap();
     assert!(c
         .github
-        .list_comments("test/repo", 2)
+        .read_comments("test/repo", 2)
         .await
         .unwrap()
         .is_empty())
@@ -321,7 +321,7 @@ async fn test_only_target_comment_is_removed() {
     }
 
     assert_eq!(
-        c.github.list_comments("test/repo", 2).await.unwrap().len(),
+        c.github.read_comments("test/repo", 2).await.unwrap().len(),
         2
     );
 
@@ -331,7 +331,7 @@ async fn test_only_target_comment_is_removed() {
         .await
         .unwrap();
 
-    let comments = c.github.list_comments("test/repo", 2).await.unwrap();
+    let comments = c.github.read_comments("test/repo", 2).await.unwrap();
     assert_eq!(comments.len(), 1);
     let h = CommentHeader::from_comment(&comments.first().unwrap().body).unwrap();
     assert_eq!(
@@ -361,7 +361,7 @@ async fn test_new_comment_is_posted_after_removal_in_different_pull() {
     }
 
     assert_eq!(
-        c.github.list_comments("test/repo", 2).await.unwrap().len(),
+        c.github.read_comments("test/repo", 2).await.unwrap().len(),
         1
     );
 
@@ -375,7 +375,7 @@ async fn test_new_comment_is_posted_after_removal_in_different_pull() {
 
     assert!(c
         .github
-        .list_comments("test/repo", 2)
+        .read_comments("test/repo", 2)
         .await
         .unwrap()
         .is_empty());
@@ -386,7 +386,7 @@ async fn test_new_comment_is_posted_after_removal_in_different_pull() {
         .await
         .unwrap();
 
-    let comments = c.github.list_comments("test/repo", 1).await.unwrap();
+    let comments = c.github.read_comments("test/repo", 1).await.unwrap();
     assert_eq!(comments.first().unwrap().id, 2);
     assert!(comments.first().unwrap().created_at > first_conflict_created_at);
 }

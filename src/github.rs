@@ -144,19 +144,18 @@ impl Token {
 #[async_trait]
 pub trait GitHubInterface {
     fn new(app_id: String, key: String) -> Self;
-    async fn installations(&self) -> Result<Vec<structs::Installation>>;
+    async fn read_installations(&self) -> Result<Vec<structs::Installation>>;
     fn cached_installations(&self) -> Vec<structs::Installation>;
-    fn add_repositories(&self, installation_id: i64, repositories: Vec<structs::Repository>);
+    fn cache_repositories(&self, installation_id: i64, repositories: Vec<structs::Repository>);
     fn remove_repositories(&self, installation_id: i64, repositories: &[structs::Repository]);
-    async fn discover_installations(&self) -> Result<Vec<structs::Installation>>;
-    async fn app(&self) -> Result<structs::App>;
-    async fn add_installation(
+    async fn read_app(&self) -> Result<structs::App>;
+    async fn read_and_cache_installation_repos(
         &self,
         mut installation: structs::Installation,
     ) -> Result<structs::Installation>;
     fn remove_installation(&self, installation: &structs::Installation);
     fn cached_repositories(&self, installation_id: i64) -> Vec<structs::Repository>;
-    async fn pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>>;
+    async fn read_pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>>;
     async fn post_comment(
         &self,
         full_repo_name: &str,
@@ -170,7 +169,7 @@ pub trait GitHubInterface {
         body: String,
     ) -> Result<()>;
     async fn delete_comment(&self, full_repo_name: &str, comment_id: i64) -> Result<()>;
-    async fn list_comments(
+    async fn read_comments(
         &self,
         full_repo_name: &str,
         issue_number: i32,
@@ -410,7 +409,7 @@ impl GitHubInterface for Client {
         }
     }
 
-    async fn app(&self) -> Result<structs::App> {
+    async fn read_app(&self) -> Result<structs::App> {
         let pp = self
             .http_client
             .get(GitHub::app())
@@ -428,7 +427,7 @@ impl GitHubInterface for Client {
             .collect()
     }
 
-    fn add_repositories(&self, installation_id: i64, mut repositories: Vec<structs::Repository>) {
+    fn cache_repositories(&self, installation_id: i64, mut repositories: Vec<structs::Repository>) {
         if let Some(repos) = self.repos.lock().unwrap().get_mut(&installation_id) {
             let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
             repos.retain(|r| !ids.contains(&r.id));
@@ -443,8 +442,7 @@ impl GitHubInterface for Client {
         }
     }
 
-    // TODO: confirm that this is actually needed (see similar stuff below)
-    async fn installations(&self) -> Result<Vec<structs::Installation>> {
+    async fn read_installations(&self) -> Result<Vec<structs::Installation>> {
         let pp = self
             .http_client
             .get(GitHub::app_installations())
@@ -453,17 +451,7 @@ impl GitHubInterface for Client {
         Ok(items)
     }
 
-    async fn discover_installations(&self) -> Result<Vec<structs::Installation>> {
-        let mut ret = Vec::new();
-        if let Ok(installations) = self.installations().await {
-            for installation in installations {
-                ret.push(self.add_installation(installation).await?);
-            }
-        }
-        Ok(ret)
-    }
-
-    async fn add_installation(
+    async fn read_and_cache_installation_repos(
         &self,
         installation: structs::Installation,
     ) -> Result<structs::Installation> {
@@ -477,6 +465,7 @@ impl GitHubInterface for Client {
                 Err(e)
             }
             Ok(token) => {
+                self.repos.lock().unwrap().insert(installation.id, Vec::new());
                 let req = self
                     .http_client
                     .get(GitHub::installation_repos())
@@ -487,7 +476,7 @@ impl GitHubInterface for Client {
                         Err(e)
                     }
                     Ok(response) => {
-                        self.add_repositories(installation.id, response.repositories);
+                        self.cache_repositories(installation.id, response.repositories);
                         Ok(installation)
                     }
                 }
@@ -511,7 +500,7 @@ impl GitHubInterface for Client {
             .remove(&TokenType::Installation(installation.id));
     }
 
-    async fn pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>> {
+    async fn read_pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>> {
         let mut out = Vec::new();
         let token = self.pick_token(full_repo_name).await?;
         let per_page = 100;
@@ -582,7 +571,7 @@ impl GitHubInterface for Client {
         Ok(())
     }
 
-    async fn list_comments(
+    async fn read_comments(
         &self,
         full_repo_name: &str,
         issue_number: i32,
