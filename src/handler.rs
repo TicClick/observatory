@@ -20,9 +20,14 @@ pub async fn pull_request_event(req: Request, body: String) -> viz::Result<()> {
     let pull_number = evt.pull_request.number;
     log::debug!("Pull #{}: received event \"{}\"", pull_number, evt.action);
     match evt.action.as_str() {
-        "synchronize" | "opened" | "reopened" => {
+        "opened" | "reopened" => {
             controller_handle
                 .add_pull(&evt.repository.full_name, evt.pull_request, true)
+                .await;
+        }
+        "synchronize" => {
+            controller_handle
+                .update_pull(&evt.repository.full_name, evt.pull_request, true)
                 .await;
         }
         "closed" => {

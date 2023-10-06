@@ -62,13 +62,30 @@ impl<T: GitHubInterface> Controller<T> {
                 reply_to.send(self.init().await).unwrap();
             }
 
-            ControllerRequest::PullRequestUpdated {
+            ControllerRequest::PullRequestCreated {
                 full_repo_name,
                 pull_request,
                 trigger_updates,
             } => {
                 let pull_number = pull_request.number;
                 self.add_pull(&full_repo_name, *pull_request, trigger_updates)
+                    .await
+                    .unwrap_or_else(|e| {
+                        log::error!(
+                            "Pull #{}: failed to add information and trigger comments: {:?}",
+                            pull_number,
+                            e
+                        );
+                    })
+            }
+
+            ControllerRequest::PullRequestUpdated {
+                full_repo_name,
+                pull_request,
+                trigger_updates,
+            } => {
+                let pull_number = pull_request.number;
+                self.update_pull(&full_repo_name, *pull_request, trigger_updates)
                     .await
                     .unwrap_or_else(|e| {
                         log::error!(
@@ -212,6 +229,24 @@ impl<T: GitHubInterface> Controller<T> {
         self.memory.remove_pull(full_repo_name, &closed_pull);
         self.conflicts
             .remove_conflicts_by_pull(full_repo_name, closed_pull.number);
+    }
+
+    async fn update_pull(
+        &self,
+        full_repo_name: &str,
+        new_pull: PullRequest,
+        trigger_updates: bool,
+    ) -> Result<()> {
+        if self.memory.contains(full_repo_name, &new_pull) {
+            self.add_pull(full_repo_name, new_pull, trigger_updates)
+                .await
+        } else {
+            log::info!(
+                "Pull #{} can't be updated because it wasn't added in the first place",
+                new_pull.number
+            );
+            Ok(())
+        }
     }
 
     /// Handle pull request changes. This includes fetching a `.diff` file from another GitHub domain,

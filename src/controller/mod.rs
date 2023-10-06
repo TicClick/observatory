@@ -14,6 +14,11 @@ pub enum ControllerRequest {
         reply_to: oneshot::Sender<Result<()>>,
     },
 
+    PullRequestCreated {
+        full_repo_name: String,
+        pull_request: Box<PullRequest>,
+        trigger_updates: bool,
+    },
     PullRequestUpdated {
         full_repo_name: String,
         pull_request: Box<PullRequest>,
@@ -76,6 +81,20 @@ impl ControllerHandle {
     }
 
     pub async fn add_pull(
+        &self,
+        full_repo_name: &str,
+        pull_request: PullRequest,
+        trigger_updates: bool,
+    ) {
+        let msg = ControllerRequest::PullRequestCreated {
+            full_repo_name: full_repo_name.to_owned(),
+            pull_request: Box::new(pull_request),
+            trigger_updates,
+        };
+        self.sender.send(msg).await.unwrap();
+    }
+
+    pub async fn update_pull(
         &self,
         full_repo_name: &str,
         pull_request: PullRequest,

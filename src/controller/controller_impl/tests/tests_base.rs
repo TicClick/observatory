@@ -105,6 +105,42 @@ async fn test_handle_message_pull_request_updated() {
     .0
     .unwrap();
 
+    assert!(ctrl.lock().await.memory.pulls("test/repo-name").is_none());
+}
+
+#[tokio::test]
+async fn test_handle_message_pull_request_created_and_updated() {
+    let (request_tx, c) = make_controller(true).await;
+    let ctrl = Arc::new(Mutex::new(c));
+
+    let pr = ctrl
+        .lock()
+        .await
+        .github
+        .test_add_pull("test/repo-name", &["wiki/Article/en.md"]);
+    let _ = request_tx
+        .send(ControllerRequest::PullRequestCreated {
+            full_repo_name: "test/repo-name".into(),
+            pull_request: Box::new(pr.clone()),
+            trigger_updates: false,
+        })
+        .await;
+    let _ = request_tx
+        .send(ControllerRequest::PullRequestUpdated {
+            full_repo_name: "test/repo-name".into(),
+            pull_request: Box::new(pr),
+            trigger_updates: false,
+        })
+        .await;
+
+    drop(request_tx);
+    let cloned = ctrl.clone();
+    tokio::join!(tokio::spawn(async move {
+        cloned.lock().await.run_forever().await;
+    }))
+    .0
+    .unwrap();
+
     assert_eq!(
         ctrl.lock()
             .await
@@ -127,7 +163,7 @@ async fn test_handle_message_pull_request_closed() {
         .github
         .test_add_pull("test/repo-name", &["wiki/Article/en.md"]);
     let _ = request_tx
-        .send(ControllerRequest::PullRequestUpdated {
+        .send(ControllerRequest::PullRequestCreated {
             full_repo_name: "test/repo-name".into(),
             pull_request: Box::new(pr.clone()),
             trigger_updates: false,
