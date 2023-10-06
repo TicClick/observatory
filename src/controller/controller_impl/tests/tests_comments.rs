@@ -6,7 +6,7 @@ use crate::helpers::{comments::CommentHeader, conflicts::ConflictType};
 async fn test_no_conflict_no_comment() {
     let c = new_controller(true).await;
     let p1 = c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]);
-    c.add_pull(
+    c.upsert_pull(
         "test/repo",
         c.github.fetch_pull("test/repo", p1.number),
         true,
@@ -27,14 +27,14 @@ async fn test_one_conflict_one_comment() {
     let p1 = c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]);
     let p2 = c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]);
 
-    c.add_pull(
+    c.upsert_pull(
         "test/repo",
         c.github.fetch_pull("test/repo", p1.number),
         true,
     )
     .await
     .unwrap();
-    c.add_pull(
+    c.upsert_pull(
         "test/repo",
         c.github.fetch_pull("test/repo", p2.number),
         true,
@@ -65,7 +65,7 @@ async fn test_one_conflict_one_valid_header() {
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             true,
@@ -100,7 +100,7 @@ async fn test_one_pull_and_conflict_one_comment() {
         ),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             true,
@@ -114,7 +114,7 @@ async fn test_one_pull_and_conflict_one_comment() {
         pulls[0].number,
         &["wiki/Article/en.md", "wiki/Other_article/en.md"],
     );
-    c.add_pull(
+    c.upsert_pull(
         "test/repo",
         c.github.fetch_pull("test/repo", pulls[0].number),
         true,
@@ -124,7 +124,7 @@ async fn test_one_pull_and_conflict_one_comment() {
 
     c.github
         .test_update_pull("test/repo", pulls[0].number, &["wiki/Other_article/en.md"]);
-    c.add_pull(
+    c.upsert_pull(
         "test/repo",
         c.github.fetch_pull("test/repo", pulls[0].number),
         true,
@@ -151,7 +151,7 @@ async fn test_one_pull_and_conflict_one_comment_updated() {
         ),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             true,
@@ -165,7 +165,7 @@ async fn test_one_pull_and_conflict_one_comment_updated() {
         pulls[0].number,
         &["wiki/Article/en.md", "wiki/Other_article/en.md"],
     );
-    c.add_pull(
+    c.upsert_pull(
         "test/repo",
         c.github.fetch_pull("test/repo", pulls[0].number),
         true,
@@ -175,7 +175,7 @@ async fn test_one_pull_and_conflict_one_comment_updated() {
 
     c.github
         .test_update_pull("test/repo", pulls[0].number, &["wiki/Other_article/en.md"]);
-    c.add_pull(
+    c.upsert_pull(
         "test/repo",
         c.github.fetch_pull("test/repo", pulls[0].number),
         true,
@@ -223,7 +223,7 @@ async fn test_post_comment_per_pull_and_conflict_combination() {
             .test_add_pull("test/repo", &["wiki/New_article/en.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             true,
@@ -275,7 +275,7 @@ async fn test_obsolete_comment_is_removed() {
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             true,
@@ -286,7 +286,7 @@ async fn test_obsolete_comment_is_removed() {
 
     c.github
         .test_update_pull("test/repo", 1, &["wiki/Article_2/ru.md"]);
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), true)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 1), true)
         .await
         .unwrap();
     assert!(c
@@ -311,7 +311,7 @@ async fn test_only_target_comment_is_removed() {
         ),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             true,
@@ -327,7 +327,7 @@ async fn test_only_target_comment_is_removed() {
 
     c.github
         .test_update_pull("test/repo", 1, &["wiki/Article/Other_article/en.md"]);
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), true)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 1), true)
         .await
         .unwrap();
 
@@ -351,7 +351,7 @@ async fn test_new_comment_is_posted_after_removal_in_different_pull() {
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             true,
@@ -369,7 +369,7 @@ async fn test_new_comment_is_posted_after_removal_in_different_pull() {
 
     c.github
         .test_update_pull("test/repo", 1, &["wiki/Article/Other_article/en.md"]);
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), true)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 1), true)
         .await
         .unwrap();
 
@@ -382,7 +382,7 @@ async fn test_new_comment_is_posted_after_removal_in_different_pull() {
 
     c.github
         .test_update_pull("test/repo", 1, &["wiki/Article/ru.md"]);
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), true)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 1), true)
         .await
         .unwrap();
 
