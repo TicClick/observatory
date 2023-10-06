@@ -18,7 +18,7 @@ async fn test_add_installations() {
         c.add_installation(inst.clone()).await.unwrap();
         installations.push(inst);
     }
-    let mut v = c.github.installations().await.unwrap();
+    let mut v = c.github.read_installations().await.unwrap();
     v.sort_by_key(|i| i.id);
     assert_eq!(v, installations);
 }

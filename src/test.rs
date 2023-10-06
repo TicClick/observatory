@@ -91,7 +91,7 @@ impl github::GitHubInterface for DummyGitHubClient {
         }
     }
 
-    async fn installations(&self) -> Result<Vec<structs::Installation>> {
+    async fn read_installations(&self) -> Result<Vec<structs::Installation>> {
         Ok(self.cached_installations())
     }
 
@@ -104,7 +104,7 @@ impl github::GitHubInterface for DummyGitHubClient {
             .collect()
     }
 
-    fn add_repositories(&self, installation_id: i64, mut repositories: Vec<structs::Repository>) {
+    fn cache_repositories(&self, installation_id: i64, mut repositories: Vec<structs::Repository>) {
         if let Some(repos) = self.repos.lock().unwrap().get_mut(&installation_id) {
             let ids: Vec<_> = repos.iter().map(|r| r.id).collect();
             repos.retain(|r| !ids.contains(&r.id));
@@ -119,11 +119,7 @@ impl github::GitHubInterface for DummyGitHubClient {
         }
     }
 
-    async fn discover_installations(&self) -> Result<Vec<structs::Installation>> {
-        Ok(self.cached_installations())
-    }
-
-    async fn app(&self) -> Result<structs::App> {
+    async fn read_app(&self) -> Result<structs::App> {
         Ok(structs::App {
             id: self.app_id.parse().unwrap(),
             slug: "test-app".to_string(),
@@ -135,7 +131,7 @@ impl github::GitHubInterface for DummyGitHubClient {
         })
     }
 
-    async fn add_installation(
+    async fn read_and_cache_installation_repos(
         &self,
         installation: structs::Installation,
     ) -> Result<structs::Installation> {
@@ -158,7 +154,7 @@ impl github::GitHubInterface for DummyGitHubClient {
         self.repos.lock().unwrap().remove(&installation.id);
     }
 
-    async fn pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>> {
+    async fn read_pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>> {
         match self.pulls.lock().unwrap().get(&full_repo_name.to_string()) {
             Some(v) => Ok(v.clone()),
             None => Ok(Vec::new()),
@@ -233,7 +229,7 @@ impl github::GitHubInterface for DummyGitHubClient {
         Ok(())
     }
 
-    async fn list_comments(
+    async fn read_comments(
         &self,
         full_repo_name: &str,
         issue_number: i32,
