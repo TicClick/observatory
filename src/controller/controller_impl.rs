@@ -62,13 +62,30 @@ impl<T: GitHubInterface> Controller<T> {
                 reply_to.send(self.init().await).unwrap();
             }
 
+            ControllerRequest::PullRequestCreated {
+                full_repo_name,
+                pull_request,
+                trigger_updates,
+            } => {
+                let pull_number = pull_request.number;
+                self.upsert_pull(&full_repo_name, *pull_request, trigger_updates)
+                    .await
+                    .unwrap_or_else(|e| {
+                        log::error!(
+                            "Pull #{}: failed to add information and trigger comments: {:?}",
+                            pull_number,
+                            e
+                        );
+                    })
+            }
+
             ControllerRequest::PullRequestUpdated {
                 full_repo_name,
                 pull_request,
                 trigger_updates,
             } => {
                 let pull_number = pull_request.number;
-                self.add_pull(&full_repo_name, *pull_request, trigger_updates)
+                self.update_pull(&full_repo_name, *pull_request, trigger_updates)
                     .await
                     .unwrap_or_else(|e| {
                         log::error!(
@@ -178,7 +195,7 @@ impl<T: GitHubInterface> Controller<T> {
     /// Add a repository and fetch its pull requests.
     async fn add_repository(&self, r: &Repository) -> Result<()> {
         for p in self.github.pulls(&r.full_name).await? {
-            self.add_pull(&r.full_name, p, false).await?;
+            self.upsert_pull(&r.full_name, p, false).await?;
         }
         Ok(())
     }
@@ -214,12 +231,30 @@ impl<T: GitHubInterface> Controller<T> {
             .remove_conflicts_by_pull(full_repo_name, closed_pull.number);
     }
 
+    async fn update_pull(
+        &self,
+        full_repo_name: &str,
+        new_pull: PullRequest,
+        trigger_updates: bool,
+    ) -> Result<()> {
+        if self.memory.contains(full_repo_name, &new_pull) {
+            self.upsert_pull(full_repo_name, new_pull, trigger_updates)
+                .await
+        } else {
+            log::info!(
+                "Pull #{} can't be updated because it wasn't added in the first place",
+                new_pull.number
+            );
+            Ok(())
+        }
+    }
+
     /// Handle pull request changes. This includes fetching a `.diff` file from another GitHub domain,
     /// which may have its own rate limits.
     ///
     /// If `trigger_updates` is set, check if the update conflicts with existing pull requests,
     /// and make its author aware (or other PRs' owners, in rare cases). For details, see [`helpers::conflicts::Storage`].
-    async fn add_pull(
+    async fn upsert_pull(
         &self,
         full_repo_name: &str,
         mut new_pull: PullRequest,

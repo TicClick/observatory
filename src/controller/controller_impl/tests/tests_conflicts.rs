@@ -10,7 +10,7 @@ async fn test_add_pull() {
     p.diff = None;
     let pn = p.number;
 
-    c.add_pull("test/repo", p, false).await.unwrap();
+    c.upsert_pull("test/repo", p, false).await.unwrap();
 
     let m = c.memory.pulls("test/repo");
     assert!(m.is_some());
@@ -25,7 +25,7 @@ async fn test_simple_overlap_originals() {
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
     ];
     for p in pulls {
-        c.add_pull("test/repo", p, false).await.unwrap();
+        c.upsert_pull("test/repo", p, false).await.unwrap();
     }
 
     assert!(c.conflicts.by_trigger("test/repo", 1).is_empty());
@@ -48,7 +48,7 @@ async fn test_simple_overlap_translations() {
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
     ];
     for p in pulls {
-        c.add_pull("test/repo", p, false).await.unwrap();
+        c.upsert_pull("test/repo", p, false).await.unwrap();
     }
 
     assert!(c.conflicts.by_trigger("test/repo", 1).is_empty());
@@ -71,7 +71,7 @@ async fn test_different_translations_do_not_overlap() {
         c.github.test_add_pull("test/repo", &["wiki/Article/ko.md"]),
     ];
     for p in pulls {
-        c.add_pull("test/repo", p, false).await.unwrap();
+        c.upsert_pull("test/repo", p, false).await.unwrap();
     }
 
     assert!(c.conflicts.by_trigger("test/repo", 1).is_empty());
@@ -86,7 +86,7 @@ async fn test_simple_early_incomplete_translation() {
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
     ];
     for p in pulls {
-        c.add_pull("test/repo", p, false).await.unwrap();
+        c.upsert_pull("test/repo", p, false).await.unwrap();
     }
 
     assert_eq!(
@@ -109,7 +109,7 @@ async fn test_simple_late_incomplete_translation() {
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
     ];
     for p in pulls {
-        c.add_pull("test/repo", p, false).await.unwrap();
+        c.upsert_pull("test/repo", p, false).await.unwrap();
     }
 
     assert!(&c.conflicts.by_trigger("test/repo", 1).is_empty());
@@ -134,7 +134,7 @@ async fn test_multiple_overlapping_changes() {
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
     ];
     for p in pulls {
-        c.add_pull("test/repo", p, false).await.unwrap();
+        c.upsert_pull("test/repo", p, false).await.unwrap();
     }
 
     let overlap = |trigger, original| {
@@ -171,7 +171,7 @@ async fn test_multiple_incomplete_translations() {
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
     ];
     for p in pulls {
-        c.add_pull("test/repo", p, false).await.unwrap();
+        c.upsert_pull("test/repo", p, false).await.unwrap();
     }
 
     let incomplete_translation = |trigger, original| {
@@ -208,7 +208,7 @@ async fn test_incomplete_translation_multiple_conflicts() {
         c.github.test_add_pull("test/repo", &["wiki/Article/ko.md"]),
     ];
     for p in pulls {
-        c.add_pull("test/repo", p, false).await.unwrap();
+        c.upsert_pull("test/repo", p, false).await.unwrap();
     }
 
     let incomplete_translation_conflict = |trigger, original| {
@@ -243,7 +243,7 @@ async fn test_overlap_no_extra_files_on_update() {
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull("test/repo", p.clone(), false).await.unwrap();
+        c.upsert_pull("test/repo", p.clone(), false).await.unwrap();
     }
 
     c.github.test_update_pull(
@@ -251,7 +251,7 @@ async fn test_overlap_no_extra_files_on_update() {
         1,
         &["wiki/Article/ru.md", "wiki/Other_article/ru.md"],
     );
-    c.add_pull("test/repo", pulls[0].clone(), false)
+    c.upsert_pull("test/repo", pulls[0].clone(), false)
         .await
         .unwrap();
 
@@ -278,7 +278,7 @@ async fn test_overlap_file_set_update_in_trigger_recognized() {
         ),
     ];
     for p in pulls.iter() {
-        c.add_pull("test/repo", p.clone(), false).await.unwrap();
+        c.upsert_pull("test/repo", p.clone(), false).await.unwrap();
     }
 
     c.github.test_update_pull(
@@ -286,7 +286,7 @@ async fn test_overlap_file_set_update_in_trigger_recognized() {
         1,
         &["wiki/Article/ru.md", "wiki/Other_article/en.md"],
     );
-    c.add_pull("test/repo", pulls[0].clone(), false)
+    c.upsert_pull("test/repo", pulls[0].clone(), false)
         .await
         .unwrap();
 
@@ -313,7 +313,7 @@ async fn test_overlap_double_update_recognized() {
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             false,
@@ -327,7 +327,7 @@ async fn test_overlap_double_update_recognized() {
         1,
         &["wiki/Article/ru.md", "wiki/Other_article/en.md"],
     );
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
         .await
         .unwrap();
     c.github.test_update_pull(
@@ -335,7 +335,7 @@ async fn test_overlap_double_update_recognized() {
         2,
         &["wiki/Article/ru.md", "wiki/Other_article/en.md"],
     );
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 2), false)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 2), false)
         .await
         .unwrap();
 
@@ -362,7 +362,7 @@ async fn test_early_incomplete_translation_update_no_unrelated_files() {
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             false,
@@ -376,7 +376,7 @@ async fn test_early_incomplete_translation_update_no_unrelated_files() {
         2,
         &["wiki/Article/en.md", "wiki/Other_article/en.md"],
     );
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 2), false)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 2), false)
         .await
         .unwrap();
 
@@ -403,7 +403,7 @@ async fn test_incomplete_translation_original_update_recognized() {
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             false,
@@ -417,7 +417,7 @@ async fn test_incomplete_translation_original_update_recognized() {
         2,
         &["wiki/Article/en.md", "wiki/Other_article/en.md"],
     );
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 2), false)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 2), false)
         .await
         .unwrap();
 
@@ -444,7 +444,7 @@ async fn test_incomplete_translation_double_update() {
         c.github.test_add_pull("test/repo", &["wiki/Article/en.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             false,
@@ -458,7 +458,7 @@ async fn test_incomplete_translation_double_update() {
         1,
         &["wiki/Article/ru.md", "wiki/Other_article/ru.md"],
     );
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
         .await
         .unwrap();
     c.github.test_update_pull(
@@ -466,7 +466,7 @@ async fn test_incomplete_translation_double_update() {
         2,
         &["wiki/Article/en.md", "wiki/Other_article/en.md"],
     );
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 2), false)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 2), false)
         .await
         .unwrap();
 
@@ -493,7 +493,7 @@ async fn test_late_incomplete_translation_update_no_extra_files() {
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             false,
@@ -507,7 +507,7 @@ async fn test_late_incomplete_translation_update_no_extra_files() {
         1,
         &["wiki/Article/en.md", "wiki/Other_article/en.md"],
     );
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
         .await
         .unwrap();
 
@@ -534,7 +534,7 @@ async fn test_incomplete_translation_update_recognized() {
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             false,
@@ -548,7 +548,7 @@ async fn test_incomplete_translation_update_recognized() {
         2,
         &["wiki/Article/ru.md", "wiki/Other_article/ru.md"],
     );
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 2), false)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 2), false)
         .await
         .unwrap();
 
@@ -576,7 +576,7 @@ async fn test_outdated_translation_produces_single_conflict() {
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             false,
@@ -616,7 +616,7 @@ async fn test_three_conflicts_at_once() {
             .test_add_pull("test/repo", &["wiki/Different_article/en.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             false,
@@ -656,7 +656,7 @@ async fn test_closed_pull_is_removed() {
     let pull = c
         .github
         .test_add_pull("test/repo", &["wiki/Article/en.md", "wiki/Article_2/ru.md"]);
-    c.add_pull("test/repo", pull, true).await.unwrap();
+    c.upsert_pull("test/repo", pull, true).await.unwrap();
 
     c.remove_pull("test/repo", c.github.fetch_pull("test/repo", 1));
     assert!(c.memory.pulls("test/repo").unwrap().is_empty());
@@ -676,7 +676,7 @@ async fn test_closed_pull_conflicts_removed() {
         ),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             true,
@@ -699,7 +699,7 @@ async fn test_closed_pull_related_conflicts_removed() {
         c.github.test_add_pull("test/repo", &["wiki/Article/zh.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             true,
@@ -723,7 +723,7 @@ async fn test_obsolete_conflict_removed() {
         c.github.test_add_pull("test/repo", &["wiki/Article/ru.md"]),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             false,
@@ -734,7 +734,7 @@ async fn test_obsolete_conflict_removed() {
 
     c.github
         .test_update_pull("test/repo", 1, &["wiki/Other_article/ru.md"]);
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
         .await
         .unwrap();
 
@@ -756,7 +756,7 @@ async fn test_only_obsolete_conflict_is_removed_overlap() {
         ),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             false,
@@ -767,7 +767,7 @@ async fn test_only_obsolete_conflict_is_removed_overlap() {
 
     c.github
         .test_update_pull("test/repo", 1, &["wiki/Article/Other_article/en.md"]);
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
         .await
         .unwrap();
 
@@ -796,7 +796,7 @@ async fn test_only_obsolete_conflict_is_removed_incomplete_translation() {
         ),
     ];
     for p in pulls.iter() {
-        c.add_pull(
+        c.upsert_pull(
             "test/repo",
             c.github.fetch_pull("test/repo", p.number),
             false,
@@ -807,7 +807,7 @@ async fn test_only_obsolete_conflict_is_removed_incomplete_translation() {
 
     c.github
         .test_update_pull("test/repo", 1, &["wiki/Article/ru.md"]);
-    c.add_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
+    c.upsert_pull("test/repo", c.github.fetch_pull("test/repo", 1), false)
         .await
         .unwrap();
 
