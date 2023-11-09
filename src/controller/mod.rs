@@ -4,7 +4,6 @@ use eyre::Result;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::config;
-use crate::github::GitHubInterface;
 use crate::structs::*;
 
 /// Message structs for interacting with the controller backend.
@@ -55,14 +54,15 @@ pub struct ControllerHandle {
 }
 
 impl ControllerHandle {
-    pub fn new<T: GitHubInterface + Sync + Send>(
+    pub fn new(
+        github: crate::github::GitHub,
         app_id: String,
         private_key: String,
         config: config::Controller,
     ) -> Self {
         let (tx, rx) = mpsc::channel(10);
         tokio::spawn(async move {
-            controller_impl::Controller::<T>::new(rx, app_id, private_key, config)
+            controller_impl::Controller::new(rx, github, app_id, private_key, config)
                 .run_forever()
                 .await
         });

@@ -5,13 +5,14 @@ use std::net::SocketAddr;
 use clap::Parser;
 use eyre::Result;
 
+use observatory::github::GitHub;
 use viz::middleware::limits;
 use viz::{types::State, Router, Server, ServiceMaker};
 use viz::{IntoResponse, Response, ResponseExt};
 use viz::{Request, RequestExt, StatusCode};
 
 use observatory::helpers::digest::RequestValidator;
-use observatory::{config, controller, github, handler, helpers::cgroup};
+use observatory::{config, controller, handler, helpers::cgroup};
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -102,7 +103,8 @@ async fn main() -> Result<()> {
     let webhook_secret = settings.github.webhook_secret;
 
     let validator = RequestValidator::new(webhook_secret);
-    let controller_handle = controller::ControllerHandle::new::<github::Client>(
+    let controller_handle = controller::ControllerHandle::new(
+        GitHub::default(),
         settings.github.app_id,
         private_key,
         settings.controller.clone(),

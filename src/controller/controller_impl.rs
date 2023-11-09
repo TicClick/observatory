@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::config;
 use crate::controller::ControllerRequest;
-use crate::github::{GitHub, GitHubInterface};
+use crate::github::{Client, GitHub};
 use crate::helpers::comments::CommentHeader;
 use crate::helpers::conflicts::{self, ConflictType};
 use crate::helpers::ToMarkdown;
@@ -23,10 +23,7 @@ use crate::structs::*;
 /// (for details, see [`ConflictType`]). After that, it leaves comments on the pull request which depends on the changes; typically, that is
 /// a translation, whose owner needs to be made aware of changes they may be missing.
 #[derive(Debug)]
-pub(super) struct Controller<T>
-where
-    T: GitHubInterface,
-{
+pub(super) struct Controller {
     /// The event queue with requests coming from the controller handle.
     receiver: mpsc::Receiver<ControllerRequest>,
 
@@ -34,7 +31,7 @@ where
     app: Option<App>,
 
     /// GitHub API client -- see [`github::Client`] for details.
-    github: T,
+    github: Client,
 
     /// The cache with pull requests and their diffs.
     memory: memory::Memory,
@@ -46,7 +43,7 @@ where
     config: config::Controller,
 }
 
-impl<T: GitHubInterface> Controller<T> {
+impl Controller {
     /// Start processing events one at a time. This function blocks until the receiver is destroyed, which happens
     /// on handle destruction automatically.
     pub(super) async fn run_forever(&mut self) {
@@ -133,6 +130,7 @@ impl<T: GitHubInterface> Controller<T> {
     /// Create an unitialized controller.
     pub(super) fn new(
         receiver: mpsc::Receiver<ControllerRequest>,
+        github: GitHub,
         app_id: String,
         private_key: String,
         config: config::Controller,
@@ -140,7 +138,7 @@ impl<T: GitHubInterface> Controller<T> {
         Self {
             receiver,
             app: None,
-            github: T::new(app_id, private_key),
+            github: Client::new(github, app_id, private_key),
             memory: memory::Memory::new(),
             conflicts: conflicts::Storage::default(),
             config,
@@ -159,7 +157,7 @@ impl<T: GitHubInterface> Controller<T> {
             let id = i.id;
             match self.add_installation(i).await {
                 Err(e) => log::error!("Failed to add installation {}: {}", id, e),
-                Ok(_) => log::info!("Processed repositories from installation {}", id)
+                Ok(_) => log::info!("Processed repositories from installation {}", id),
             }
         }
         Ok(())
@@ -168,7 +166,9 @@ impl<T: GitHubInterface> Controller<T> {
     /// Add an installation and fetch pull requests (one installation may have several repos).
     async fn add_installation(&self, installation: Installation) -> Result<()> {
         let iid = installation.id;
-        self.github.read_and_cache_installation_repos(installation).await?;
+        self.github
+            .read_and_cache_installation_repos(installation)
+            .await?;
         self.add_repositories(iid, self.github.cached_repositories(iid))
             .await;
         Ok(())
@@ -366,7 +366,7 @@ impl<T: GitHubInterface> Controller<T> {
                                 existing_comment.id,
                                 r.original,
                                 r.kind,
-                                GitHub::pull_url(full_repo_name, pull_to_clean),
+                                self.github.github.pull_url(full_repo_name, pull_to_clean),
                                 e
                             );
                         } else {
@@ -375,7 +375,7 @@ impl<T: GitHubInterface> Controller<T> {
                                 existing_comment.id,
                                 r.original,
                                 r.kind,
-                                GitHub::pull_url(full_repo_name, pull_to_clean),
+                                self.github.github.pull_url(full_repo_name, pull_to_clean),
                             );
                         }
                     }
@@ -398,7 +398,7 @@ impl<T: GitHubInterface> Controller<T> {
                                 existing_comment.id,
                                 u.original,
                                 u.kind,
-                                GitHub::pull_url(full_repo_name, pull_to_notify),
+                                self.github.github.pull_url(full_repo_name, pull_to_notify),
                                 e
                             );
                         }
@@ -408,7 +408,7 @@ impl<T: GitHubInterface> Controller<T> {
                             existing_comment.id,
                             u.original,
                             u.kind,
-                            GitHub::pull_url(full_repo_name, pull_to_notify),
+                            self.github.github.pull_url(full_repo_name, pull_to_notify),
                         );
                     }
                 } else if self.config.post_comments {
@@ -421,7 +421,7 @@ impl<T: GitHubInterface> Controller<T> {
                             "Failed to post a NEW comment about pull #{} of kind {:?} in {}: {:?}",
                             u.original,
                             u.kind,
-                            GitHub::pull_url(full_repo_name, pull_to_notify),
+                            self.github.github.pull_url(full_repo_name, pull_to_notify),
                             e
                         );
                     }
@@ -430,7 +430,7 @@ impl<T: GitHubInterface> Controller<T> {
                         "Would post a NEW comment about #{} of kind {:?} in {}",
                         u.original,
                         u.kind,
-                        GitHub::pull_url(full_repo_name, pull_to_notify),
+                        self.github.github.pull_url(full_repo_name, pull_to_notify),
                     );
                 }
             }
