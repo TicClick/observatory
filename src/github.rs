@@ -410,15 +410,6 @@ impl Client {
         Ok(app)
     }
 
-    pub fn cached_installations(&self) -> Vec<structs::Installation> {
-        self.installations
-            .lock()
-            .unwrap()
-            .values()
-            .cloned()
-            .collect()
-    }
-
     pub fn cache_repositories(
         &self,
         installation_id: i64,
