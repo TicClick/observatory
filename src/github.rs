@@ -18,6 +18,7 @@ const GITHUB_API_ROOT: &str = "https://api.github.com";
 const GITHUB_ROOT: &str = "https://github.com";
 
 const RETRYABLE_ERRORS: [u16; 4] = [429, 500, 502, 503];
+const FATAL_ERROR: u16 = 501; // HTTP 501 Not Implemented
 
 const MIN_TIMEOUT: Duration = Duration::from_secs(1);
 const MAX_TIMEOUT: Duration = Duration::from_secs(30);
@@ -277,6 +278,11 @@ async fn __text(rb: reqwest::RequestBuilder) -> Result<String> {
                         timer.sleep();
                         continue;
                     }
+
+                    if status.as_u16() == FATAL_ERROR {
+                        panic!("Fatal HTTP error: {}", logging_string);
+                    }
+
                     eyre::bail!(logging_string);
                 }
 
