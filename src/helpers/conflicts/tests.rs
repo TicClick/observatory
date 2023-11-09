@@ -68,8 +68,8 @@ fn article_basic() {
 fn different_paths_no_conflict() {
     let mut gh = test::GitHubServer::new();
 
-    let existing_pull = gh.make_pull("test/repo-name", &["wiki/First_article/en.md"]);
-    let new_pull = gh.make_pull("test/repo-name", &["wiki/Second_article/en.md"]);
+    let existing_pull = gh.make_pull("test/repo", &["wiki/First_article/en.md"]);
+    let new_pull = gh.make_pull("test/repo", &["wiki/Second_article/en.md"]);
 
     assert!(compare_pulls(&new_pull, &existing_pull).is_empty());
 }
@@ -78,8 +78,8 @@ fn different_paths_no_conflict() {
 fn no_markdown_no_conflict() {
     let mut gh = test::GitHubServer::new();
 
-    let existing_pull = gh.make_pull("test/repo-name", &["wiki/First_article/img/test.png"]);
-    let new_pull = gh.make_pull("test/repo-name", &["wiki/First_article/img/test.png"]);
+    let existing_pull = gh.make_pull("test/repo", &["wiki/First_article/img/test.png"]);
+    let new_pull = gh.make_pull("test/repo", &["wiki/First_article/img/test.png"]);
 
     assert!(compare_pulls(&new_pull, &existing_pull).is_empty());
 }
@@ -88,8 +88,8 @@ fn no_markdown_no_conflict() {
 fn single_file_overlap() {
     let mut gh = test::GitHubServer::new();
 
-    let existing_pull = gh.make_pull("test/repo-name", &["wiki/Article/en.md"]);
-    let new_pull = gh.make_pull("test/repo-name", &["wiki/Article/en.md"]);
+    let existing_pull = gh.make_pull("test/repo", &["wiki/Article/en.md"]);
+    let new_pull = gh.make_pull("test/repo", &["wiki/Article/en.md"]);
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
@@ -107,7 +107,7 @@ fn multiple_files_overlap() {
     let mut gh = test::GitHubServer::new();
 
     let existing_pull = gh.make_pull(
-        "test/repo-name",
+        "test/repo",
         &[
             "wiki/Article/en.md",
             "wiki/Ranking_criteria/en.md",
@@ -116,7 +116,7 @@ fn multiple_files_overlap() {
         ],
     );
     let new_pull = gh.make_pull(
-        "test/repo-name",
+        "test/repo",
         &[
             "wiki/Ranking_criteria/en.md",
             "wiki/Article/en.md",
@@ -155,8 +155,8 @@ fn multiple_files_overlap() {
 fn existing_translation_becomes_incomplete() {
     let mut gh = test::GitHubServer::new();
 
-    let existing_pull = gh.make_pull("test/repo-name", &["wiki/Article/ru.md"]);
-    let new_pull = gh.make_pull("test/repo-name", &["wiki/Article/en.md"]);
+    let existing_pull = gh.make_pull("test/repo", &["wiki/Article/ru.md"]);
+    let new_pull = gh.make_pull("test/repo", &["wiki/Article/en.md"]);
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
@@ -173,8 +173,8 @@ fn existing_translation_becomes_incomplete() {
 fn new_translation_marked_as_incomplete() {
     let mut gh = test::GitHubServer::new();
 
-    let existing_pull = gh.make_pull("test/repo-name", &["wiki/Article/en.md"]);
-    let new_pull = gh.make_pull("test/repo-name", &["wiki/Article/ru.md"]);
+    let existing_pull = gh.make_pull("test/repo", &["wiki/Article/en.md"]);
+    let new_pull = gh.make_pull("test/repo", &["wiki/Article/ru.md"]);
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),

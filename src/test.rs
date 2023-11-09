@@ -102,7 +102,7 @@ impl GitHubServer {
                 id: 2,
                 login: "BanchoBot".to_string(),
             },
-            html_url: self.url.pull_url("test/repo", number),
+            html_url: self.url.pull_url(full_repo_name, number),
             created_at: now,
             updated_at: now,
             diff: Some(make_simple_diff(file_names)),
@@ -212,7 +212,7 @@ impl GitHubServer {
 
     pub fn with_default_app_installations(mut self) -> Self {
         let installation = self.make_installation();
-        let repo = self.make_repo(installation.id, "test/repo-name");
+        let repo = self.make_repo(installation.id, "test/repo");
         self.with_app_installations(&[(installation, vec![repo])])
     }
 }

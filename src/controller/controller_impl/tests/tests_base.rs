@@ -102,15 +102,15 @@ async fn test_handle_message_pull_request_created() {
         .with_default_github_app()
         .with_default_app_installations();
 
-    let pr = server.make_pull("test/repo-name", &["wiki/Article/en.md"]);
-    server = server.with_pull("test/repo-name", &pr);
+    let pr = server.make_pull("test/repo", &["wiki/Article/en.md"]);
+    server = server.with_pull("test/repo", &pr);
 
     let (request_tx, c) = make_controller(&server, true).await;
     let ctrl = Arc::new(Mutex::new(c));
 
     let _ = request_tx
         .send(ControllerRequest::PullRequestCreated {
-            full_repo_name: "test/repo-name".into(),
+            full_repo_name: "test/repo".into(),
             pull_request: Box::new(pr),
             trigger_updates: false,
         })
@@ -124,7 +124,7 @@ async fn test_handle_message_pull_request_created() {
     .0
     .unwrap();
 
-    assert!(ctrl.lock().await.memory.pulls("test/repo-name").is_some());
+    assert!(ctrl.lock().await.memory.pulls("test/repo").is_some());
 }
 
 #[tokio::test]
@@ -133,22 +133,22 @@ async fn test_handle_message_pull_request_created_and_updated() {
         .with_default_github_app()
         .with_default_app_installations();
 
-    let pr = server.make_pull("test/repo-name", &["wiki/Article/en.md"]);
-    server = server.with_pull("test/repo-name", &pr);
+    let pr = server.make_pull("test/repo", &["wiki/Article/en.md"]);
+    server = server.with_pull("test/repo", &pr);
 
     let (request_tx, c) = make_controller(&server, true).await;
     let ctrl = Arc::new(Mutex::new(c));
 
     let _ = request_tx
         .send(ControllerRequest::PullRequestCreated {
-            full_repo_name: "test/repo-name".into(),
+            full_repo_name: "test/repo".into(),
             pull_request: Box::new(pr.clone()),
             trigger_updates: false,
         })
         .await;
     let _ = request_tx
         .send(ControllerRequest::PullRequestUpdated {
-            full_repo_name: "test/repo-name".into(),
+            full_repo_name: "test/repo".into(),
             pull_request: Box::new(pr),
             trigger_updates: false,
         })
@@ -166,7 +166,7 @@ async fn test_handle_message_pull_request_created_and_updated() {
         ctrl.lock()
             .await
             .memory
-            .pulls("test/repo-name")
+            .pulls("test/repo")
             .unwrap()
             .len(),
         1
@@ -179,22 +179,22 @@ async fn test_handle_message_pull_request_closed() {
         .with_default_github_app()
         .with_default_app_installations();
 
-    let pr = server.make_pull("test/repo-name", &["wiki/Article/en.md"]);
-    server = server.with_pull("test/repo-name", &pr);
+    let pr = server.make_pull("test/repo", &["wiki/Article/en.md"]);
+    server = server.with_pull("test/repo", &pr);
 
     let (request_tx, c) = make_controller(&server, true).await;
     let ctrl = Arc::new(Mutex::new(c));
 
     let _ = request_tx
         .send(ControllerRequest::PullRequestCreated {
-            full_repo_name: "test/repo-name".into(),
+            full_repo_name: "test/repo".into(),
             pull_request: Box::new(pr.clone()),
             trigger_updates: false,
         })
         .await;
     let _ = request_tx
         .send(ControllerRequest::PullRequestClosed {
-            full_repo_name: "test/repo-name".into(),
+            full_repo_name: "test/repo".into(),
             pull_request: Box::new(pr),
         })
         .await;
@@ -211,7 +211,7 @@ async fn test_handle_message_pull_request_closed() {
         .lock()
         .await
         .memory
-        .pulls("test/repo-name")
+        .pulls("test/repo")
         .unwrap()
         .is_empty());
 }
@@ -222,7 +222,7 @@ async fn test_handle_message_installation_created() {
 
     let inst = server.make_installation();
     let inst_id = inst.id;
-    let repo = server.make_repo(inst_id, "test/repo-name");
+    let repo = server.make_repo(inst_id, "test/repo");
     server = server.with_app_installations(&[(inst.clone(), vec![repo])]);
 
     let (request_tx, c) = make_controller(&server, true).await;
@@ -254,7 +254,7 @@ async fn test_handle_message_installation_deleted() {
 
     let inst = server.make_installation();
     let inst_id = inst.id;
-    let repo = server.make_repo(inst_id, "test/repo-name");
+    let repo = server.make_repo(inst_id, "test/repo");
     server = server.with_app_installations(&[(inst.clone(), vec![repo])]);
 
     let (request_tx, c) = make_controller(&server, true).await;
@@ -294,8 +294,8 @@ async fn test_handle_message_installation_repositories_added() {
     let inst = server.make_installation();
     let inst_id = inst.id;
     let repos = vec![
-        server.make_repo(inst_id, "test/repo-name-1"),
-        server.make_repo(inst_id, "test/repo-name-2"),
+        server.make_repo(inst_id, "test/repo-1"),
+        server.make_repo(inst_id, "test/repo-2"),
     ];
     server = server.with_app_installations(&[(inst.clone(), repos.clone())]);
 
@@ -335,8 +335,8 @@ async fn test_handle_message_installation_repositories_removed() {
     let inst = server.make_installation();
     let inst_id = inst.id;
     let repos = vec![
-        server.make_repo(inst_id, "test/repo-name-1"),
-        server.make_repo(inst_id, "test/repo-name-2"),
+        server.make_repo(inst_id, "test/repo-1"),
+        server.make_repo(inst_id, "test/repo-2"),
     ];
     server = server.with_app_installations(&[(inst.clone(), repos.clone())]);
 
