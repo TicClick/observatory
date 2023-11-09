@@ -2,11 +2,16 @@ use std::sync::Arc;
 use tokio::sync::{oneshot, Mutex};
 
 use super::*;
-use crate::{github::GitHubInterface, structs::*};
+use crate::structs::*;
+use crate::test::GitHubServer;
 
 #[tokio::test]
 async fn test_has_control_over() {
-    let c = new_controller(true).await;
+    let server = GitHubServer::new()
+        .with_default_github_app()
+        .with_default_app_installations();
+
+    let c = new_controller(&server, true).await;
 
     assert!(c.has_control_over(&Actor {
         id: 1,
@@ -29,7 +34,11 @@ async fn test_has_control_over() {
 
 #[tokio::test]
 async fn test_has_control_over_uninitialized() {
-    let c = new_controller(false).await;
+    let server = GitHubServer::new()
+        .with_default_github_app()
+        .with_default_app_installations();
+
+    let c = new_controller(&server, false).await;
     assert!(!c.has_control_over(&Actor {
         id: 1,
         login: "test-app[bot]".to_string()
@@ -42,7 +51,11 @@ async fn test_has_control_over_uninitialized() {
 
 #[tokio::test]
 async fn test_run_forever_stops_after_transmitter_is_destroyed() {
-    let (request_tx, mut c) = make_controller(false).await;
+    let server = GitHubServer::new()
+        .with_default_github_app()
+        .with_default_app_installations();
+
+    let (request_tx, mut c) = make_controller(&server, false).await;
     let handle = async move {
         c.run_forever().await;
     };
@@ -59,7 +72,11 @@ async fn test_run_forever_stops_after_transmitter_is_destroyed() {
 
 #[tokio::test]
 async fn test_handle_message_init() {
-    let (request_tx, c) = make_controller(false).await;
+    let server = GitHubServer::new()
+        .with_default_github_app()
+        .with_default_app_installations();
+
+    let (request_tx, c) = make_controller(&server, false).await;
     let ctrl = Arc::new(Mutex::new(c));
 
     let (tx, rx) = oneshot::channel();
@@ -80,17 +97,19 @@ async fn test_handle_message_init() {
 }
 
 #[tokio::test]
-async fn test_handle_message_pull_request_updated() {
-    let (request_tx, c) = make_controller(true).await;
+async fn test_handle_message_pull_request_created() {
+    let mut server = GitHubServer::new()
+        .with_default_github_app()
+        .with_default_app_installations();
+
+    let pr = server.make_pull("test/repo-name", &["wiki/Article/en.md"]);
+    server = server.with_pull("test/repo-name", &pr);
+
+    let (request_tx, c) = make_controller(&server, true).await;
     let ctrl = Arc::new(Mutex::new(c));
 
-    let pr = ctrl
-        .lock()
-        .await
-        .github
-        .test_add_pull("test/repo-name", &["wiki/Article/en.md"]);
     let _ = request_tx
-        .send(ControllerRequest::PullRequestUpdated {
+        .send(ControllerRequest::PullRequestCreated {
             full_repo_name: "test/repo-name".into(),
             pull_request: Box::new(pr),
             trigger_updates: false,
@@ -105,19 +124,21 @@ async fn test_handle_message_pull_request_updated() {
     .0
     .unwrap();
 
-    assert!(ctrl.lock().await.memory.pulls("test/repo-name").is_none());
+    assert!(ctrl.lock().await.memory.pulls("test/repo-name").is_some());
 }
 
 #[tokio::test]
 async fn test_handle_message_pull_request_created_and_updated() {
-    let (request_tx, c) = make_controller(true).await;
+    let mut server = GitHubServer::new()
+        .with_default_github_app()
+        .with_default_app_installations();
+
+    let pr = server.make_pull("test/repo-name", &["wiki/Article/en.md"]);
+    server = server.with_pull("test/repo-name", &pr);
+
+    let (request_tx, c) = make_controller(&server, true).await;
     let ctrl = Arc::new(Mutex::new(c));
 
-    let pr = ctrl
-        .lock()
-        .await
-        .github
-        .test_add_pull("test/repo-name", &["wiki/Article/en.md"]);
     let _ = request_tx
         .send(ControllerRequest::PullRequestCreated {
             full_repo_name: "test/repo-name".into(),
@@ -154,14 +175,16 @@ async fn test_handle_message_pull_request_created_and_updated() {
 
 #[tokio::test]
 async fn test_handle_message_pull_request_closed() {
-    let (request_tx, c) = make_controller(true).await;
+    let mut server = GitHubServer::new()
+        .with_default_github_app()
+        .with_default_app_installations();
+
+    let pr = server.make_pull("test/repo-name", &["wiki/Article/en.md"]);
+    server = server.with_pull("test/repo-name", &pr);
+
+    let (request_tx, c) = make_controller(&server, true).await;
     let ctrl = Arc::new(Mutex::new(c));
 
-    let pr = ctrl
-        .lock()
-        .await
-        .github
-        .test_add_pull("test/repo-name", &["wiki/Article/en.md"]);
     let _ = request_tx
         .send(ControllerRequest::PullRequestCreated {
             full_repo_name: "test/repo-name".into(),
@@ -195,10 +218,16 @@ async fn test_handle_message_pull_request_closed() {
 
 #[tokio::test]
 async fn test_handle_message_installation_created() {
-    let (request_tx, c) = make_controller(true).await;
+    let mut server = GitHubServer::new().with_default_github_app();
+
+    let inst = server.make_installation();
+    let inst_id = inst.id;
+    let repo = server.make_repo(inst_id, "test/repo-name");
+    server = server.with_app_installations(&[(inst.clone(), vec![repo])]);
+
+    let (request_tx, c) = make_controller(&server, true).await;
     let ctrl = Arc::new(Mutex::new(c));
 
-    let inst = ctrl.lock().await.github.test_add_installation();
     let _ = request_tx
         .send(ControllerRequest::InstallationCreated {
             installation: Box::new(inst),
@@ -213,15 +242,24 @@ async fn test_handle_message_installation_created() {
     .0
     .unwrap();
 
-    assert_eq!(ctrl.lock().await.github.cached_installations().len(), 1);
+    assert_eq!(
+        ctrl.lock().await.github.cached_repositories(inst_id).len(),
+        1
+    );
 }
 
 #[tokio::test]
 async fn test_handle_message_installation_deleted() {
-    let (request_tx, c) = make_controller(true).await;
+    let mut server = GitHubServer::new().with_default_github_app();
+
+    let inst = server.make_installation();
+    let inst_id = inst.id;
+    let repo = server.make_repo(inst_id, "test/repo-name");
+    server = server.with_app_installations(&[(inst.clone(), vec![repo])]);
+
+    let (request_tx, c) = make_controller(&server, true).await;
     let ctrl = Arc::new(Mutex::new(c));
 
-    let inst = ctrl.lock().await.github.test_add_installation();
     let _ = request_tx
         .send(ControllerRequest::InstallationCreated {
             installation: Box::new(inst.clone()),
@@ -241,23 +279,28 @@ async fn test_handle_message_installation_deleted() {
     .0
     .unwrap();
 
-    assert!(ctrl.lock().await.github.cached_installations().is_empty());
+    assert!(ctrl
+        .lock()
+        .await
+        .github
+        .cached_repositories(inst_id)
+        .is_empty());
 }
 
 #[tokio::test]
 async fn test_handle_message_installation_repositories_added() {
-    let (request_tx, c) = make_controller(true).await;
-    let ctrl = Arc::new(Mutex::new(c));
+    let mut server = GitHubServer::new().with_default_github_app();
 
-    let (inst, repos) = {
-        let gh = &ctrl.lock().await.github;
-        let inst = gh.test_add_installation();
-        let repos = [
-            gh.test_add_repository(inst.id, "test/repo"),
-            gh.test_add_repository(inst.id, "test/repo-2"),
-        ];
-        (inst, repos.to_vec())
-    };
+    let inst = server.make_installation();
+    let inst_id = inst.id;
+    let repos = vec![
+        server.make_repo(inst_id, "test/repo-name-1"),
+        server.make_repo(inst_id, "test/repo-name-2"),
+    ];
+    server = server.with_app_installations(&[(inst.clone(), repos.clone())]);
+
+    let (request_tx, c) = make_controller(&server, true).await;
+    let ctrl = Arc::new(Mutex::new(c));
 
     let _ = request_tx
         .send(ControllerRequest::InstallationCreated {
@@ -287,18 +330,18 @@ async fn test_handle_message_installation_repositories_added() {
 
 #[tokio::test]
 async fn test_handle_message_installation_repositories_removed() {
-    let (request_tx, c) = make_controller(true).await;
-    let ctrl = Arc::new(Mutex::new(c));
+    let mut server = GitHubServer::new().with_default_github_app();
 
-    let (inst, repos) = {
-        let gh = &ctrl.lock().await.github;
-        let inst = gh.test_add_installation();
-        let repos = [
-            gh.test_add_repository(inst.id, "test/repo"),
-            gh.test_add_repository(inst.id, "test/repo-2"),
-        ];
-        (inst, repos.to_vec())
-    };
+    let inst = server.make_installation();
+    let inst_id = inst.id;
+    let repos = vec![
+        server.make_repo(inst_id, "test/repo-name-1"),
+        server.make_repo(inst_id, "test/repo-name-2"),
+    ];
+    server = server.with_app_installations(&[(inst.clone(), repos.clone())]);
+
+    let (request_tx, c) = make_controller(&server, true).await;
+    let ctrl = Arc::new(Mutex::new(c));
 
     let removed_repo = repos[0].clone();
     let retained_repo = repos[1].clone();

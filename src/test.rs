@@ -1,29 +1,10 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 
-use crate::github;
+use crate::github::GitHub;
 use crate::structs;
 
-pub fn pull_link(full_repo_name: &str, pull_number: i32) -> String {
-    github::GitHub::default().pull_url(full_repo_name, pull_number)
-}
-
-pub fn make_pull(pull_id: i64, file_names: &[&str]) -> structs::PullRequest {
-    let now = chrono::Utc::now();
-    structs::PullRequest {
-        id: pull_id,
-        number: pull_id as i32,
-        state: "open".to_string(),
-        title: "Update `Ranking criteria`".to_string(),
-        user: structs::Actor {
-            id: 1,
-            login: "BanchoBot".to_string(),
-        },
-        html_url: pull_link("test/repo", pull_id as i32),
-        created_at: now,
-        updated_at: now,
-        diff: Some(make_simple_diff(file_names)),
-    }
-}
+pub static TEST_APP_ID: i64 = 123;
 
 pub fn make_simple_diff(file_names: &[&str]) -> unidiff::PatchSet {
     let diff: Vec<String> = file_names
@@ -47,4 +28,191 @@ index 5483f282a0a..2c8c1482b97 100644
         })
         .collect();
     unidiff::PatchSet::from_str(&diff.join("\n")).unwrap()
+}
+
+pub struct GitHubServer {
+    pub server: mockito::ServerGuard,
+    pub url: GitHub,
+
+    pub installations: HashMap<i64, structs::Installation>, // installation id -> object
+    pub repos: HashMap<i64, HashMap<String, structs::Repository>>, // installation id -> full repository name -> object
+    pub pulls: HashMap<String, HashMap<i32, structs::PullRequest>>, // full repository name -> pull number -> object
+}
+
+impl GitHubServer {
+    pub fn make_app(&self) -> structs::App {
+        structs::App {
+            id: TEST_APP_ID,
+            slug: "test-app".into(),
+            owner: structs::Actor {
+                id: 1,
+                login: "TicClick".into(),
+            },
+            name: "observatory-test-app".into(),
+        }
+    }
+
+    pub fn make_installation(&mut self) -> structs::Installation {
+        let id = self.installations.len() as i64 + 1;
+        let new_installation = structs::Installation {
+            id,
+            account: structs::Actor {
+                id: 1,
+                login: "TicClick".into(),
+            },
+            app_id: TEST_APP_ID,
+        };
+        self.installations.insert(id, new_installation.clone());
+        new_installation
+    }
+
+    pub fn make_repo(&mut self, installation_id: i64, full_repo_name: &str) -> structs::Repository {
+        let repos = self
+            .repos
+            .entry(installation_id)
+            .or_insert(HashMap::default());
+        let id = repos.len() as i64 + 1;
+
+        let new_repo = structs::Repository {
+            id,
+            name: full_repo_name.split("/").last().unwrap().into(),
+            full_name: full_repo_name.into(),
+            fork: None,
+            owner: None,
+        };
+        repos.insert(full_repo_name.into(), new_repo.clone());
+        new_repo
+    }
+
+    pub fn make_pull(&mut self, full_repo_name: &str, file_names: &[&str]) -> structs::PullRequest {
+        let pulls = self
+            .pulls
+            .entry(full_repo_name.into())
+            .or_insert(HashMap::default());
+        let id = pulls.len() as i64 + 1;
+        let number = id as i32;
+
+        let now = chrono::Utc::now();
+        let new_pull = structs::PullRequest {
+            id,
+            number,
+            state: "open".to_string(),
+            title: "Update `Ranking criteria`".to_string(),
+            user: structs::Actor {
+                id: 2,
+                login: "BanchoBot".to_string(),
+            },
+            html_url: self.url.pull_url("test/repo", number),
+            created_at: now,
+            updated_at: now,
+            diff: Some(make_simple_diff(file_names)),
+        };
+        pulls.insert(number, new_pull.clone());
+        new_pull
+    }
+}
+
+impl GitHubServer {
+    pub fn new() -> Self {
+        let server = mockito::Server::new();
+        let gh = GitHub::new(server.url(), server.url());
+
+        Self {
+            server,
+            url: gh,
+            installations: HashMap::new(),
+            repos: HashMap::new(),
+            pulls: HashMap::new(),
+        }
+    }
+
+    pub fn with_github_app(mut self, app: &structs::App) -> Self {
+        self.server
+            .mock("GET", "/app")
+            .with_status(200)
+            .with_body(serde_json::to_string(app).unwrap())
+            .create();
+        self
+    }
+
+    pub fn with_app_installations(
+        mut self,
+        installations: &[(structs::Installation, Vec<structs::Repository>)],
+    ) -> Self {
+        let ii: Vec<_> = installations.iter().cloned().map(|i| i.0).collect();
+
+        self.server
+            .mock("GET", "/app/installations")
+            .with_status(200)
+            .with_body(serde_json::to_string(&ii).unwrap())
+            .create();
+
+        for (i, rr) in installations {
+            let token_str = format!("fake-access-token-installation-{}", i.id);
+            let token = structs::InstallationToken {
+                token: token_str,
+                expires_at: chrono::Utc::now() + chrono::Duration::minutes(30),
+                repositories: None,
+                permissions: HashMap::<String, String>::from_iter([(
+                    "pulls".to_owned(),
+                    "write".to_owned(),
+                )]),
+            };
+            self.server
+                .mock(
+                    "POST",
+                    format!("/app/installations/{}/access_tokens", i.id).as_str(),
+                )
+                .with_status(201)
+                .with_body(serde_json::to_string(&token).unwrap())
+                .create();
+
+            let repos_response = structs::InstallationRepositories {
+                total_count: rr.len() as i32,
+                repositories: rr.to_vec(),
+            };
+
+            self.server
+                .mock("GET", "/installation/repositories")
+                .with_status(200)
+                .with_body(serde_json::to_string(&repos_response).unwrap())
+                .create();
+
+            for r in rr {
+                self.server
+                    .mock("GET", format!("/repos/{}/pulls?state=open&direction=asc&sort=created&per_page=100&page=1", r.full_name).as_str())
+                    .with_status(200)
+                    .with_body(serde_json::to_string(&Vec::<structs::PullRequest>::new()).unwrap())
+                    .create();
+            }
+        }
+        self
+    }
+
+    pub fn with_pull(mut self, full_repo_name: &str, pull: &structs::PullRequest) -> Self {
+        if let Some(ref diff) = pull.diff {
+            self.server
+                .mock(
+                    "GET",
+                    format!("/{}/pull/{}.diff", full_repo_name, pull.number).as_str(),
+                )
+                .with_status(200)
+                .with_body(diff.to_string())
+                .create();
+        }
+        self
+    }
+}
+
+impl GitHubServer {
+    pub fn with_default_github_app(self) -> Self {
+        let app = self.make_app();
+        self.with_github_app(&app)
+    }
+
+    pub fn with_default_app_installations(mut self) -> Self {
+        let installation = self.make_installation();
+        let repo = self.make_repo(installation.id, "test/repo-name");
+        self.with_app_installations(&[(installation, vec![repo])])
+    }
 }

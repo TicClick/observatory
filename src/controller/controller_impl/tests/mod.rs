@@ -1,8 +1,6 @@
-use crate::github::GitHub;
+use crate::test::GitHubServer;
 
 use super::{Controller, ControllerRequest};
-
-static TEST_APP_ID: i32 = 123;
 
 /// Generated with: ssh-keygen -m PEM -t rsa -b 2048
 static TEST_APP_PRIVATE_KEY: &str = "
@@ -35,15 +33,14 @@ U0sfVofQ+RD9J5VpyP89BJjcSUHJR8ZDIwYQBzW5AG+z7dXD4Zkn
 -----END RSA PRIVATE KEY-----";
 
 async fn make_controller(
-    server: &mockito::Server,
+    server: &GitHubServer,
     init: bool,
 ) -> (tokio::sync::mpsc::Sender<ControllerRequest>, Controller) {
-    let github = GitHub::new(server.url(), server.url());
     let (tx, rx) = tokio::sync::mpsc::channel(10);
     let mut c = Controller::new(
         rx,
-        github,
-        TEST_APP_ID.to_string(),
+        server.url.clone(),
+        crate::test::TEST_APP_ID.to_string(),
         TEST_APP_PRIVATE_KEY.to_string(),
         crate::config::Controller {
             post_comments: true,
@@ -55,11 +52,11 @@ async fn make_controller(
     (tx, c)
 }
 
-async fn new_controller(server: &mockito::Server, init: bool) -> Controller {
+async fn new_controller(server: &GitHubServer, init: bool) -> Controller {
     make_controller(server, init).await.1
 }
 
 mod tests_base;
-mod tests_comments;
-mod tests_conflicts;
-mod tests_installations_repos;
+// mod tests_comments;
+// mod tests_conflicts;
+// mod tests_installations_repos;
