@@ -163,12 +163,7 @@ async fn test_handle_message_pull_request_created_and_updated() {
     .unwrap();
 
     assert_eq!(
-        ctrl.lock()
-            .await
-            .memory
-            .pulls("test/repo")
-            .unwrap()
-            .len(),
+        ctrl.lock().await.memory.pulls("test/repo").unwrap().len(),
         1
     );
 }

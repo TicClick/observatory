@@ -110,6 +110,19 @@ impl GitHubServer {
         pulls.insert(number, new_pull.clone());
         new_pull
     }
+
+    pub fn change_pull_diff(
+        &mut self,
+        full_repo_name: &str,
+        number: i32,
+        file_names: &[&str],
+    ) -> structs::PullRequest {
+        let pulls = self.pulls.get_mut(full_repo_name).unwrap();
+        let pull = pulls.get_mut(&number).unwrap();
+        pull.diff = Some(make_simple_diff(file_names));
+        pull.updated_at = chrono::Utc::now();
+        pull.clone()
+    }
 }
 
 impl GitHubServer {
@@ -199,6 +212,13 @@ impl GitHubServer {
                 .with_status(200)
                 .with_body(diff.to_string())
                 .create();
+        }
+        self
+    }
+
+    pub fn with_pulls(mut self, full_repo_name: &str, pulls: &[structs::PullRequest]) -> Self {
+        for p in pulls {
+            self = self.with_pull(full_repo_name, p);
         }
         self
     }
