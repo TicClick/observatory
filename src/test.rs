@@ -192,10 +192,14 @@ impl GitHubServer {
                 .create();
 
             for r in rr {
+                let prs = match self.pulls.get(&r.full_name) {
+                    Some(pp) => pp.values().cloned().collect(),
+                    None => Vec::new(),
+                };
                 self.server
                     .mock("GET", format!("/repos/{}/pulls?state=open&direction=asc&sort=created&per_page=100&page=1", r.full_name).as_str())
                     .with_status(200)
-                    .with_body(serde_json::to_string(&Vec::<structs::PullRequest>::new()).unwrap())
+                    .with_body(serde_json::to_string(&prs).unwrap())
                     .create();
             }
         }
