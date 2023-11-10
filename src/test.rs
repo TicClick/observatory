@@ -37,6 +37,7 @@ pub struct GitHubServer {
     pub installations: HashMap<i64, structs::Installation>, // installation id -> object
     pub repos: HashMap<i64, HashMap<String, structs::Repository>>, // installation id -> full repository name -> object
     pub pulls: HashMap<String, HashMap<i32, structs::PullRequest>>, // full repository name -> pull number -> object
+    pub comments: HashMap<String, HashMap<i32, HashMap<i64, structs::IssueComment>>>, // full repository name -> pull number -> comment id -> object
 }
 
 impl GitHubServer {
@@ -123,6 +124,36 @@ impl GitHubServer {
         pull.updated_at = chrono::Utc::now();
         pull.clone()
     }
+
+    pub fn make_comment(
+        &mut self,
+        full_repo_name: &str,
+        pull_number: i32,
+        body: &str,
+        author: &str,
+    ) -> structs::IssueComment {
+        let pulls = self
+            .comments
+            .entry(full_repo_name.into())
+            .or_insert(HashMap::default());
+        let comments = pulls.entry(pull_number).or_insert(HashMap::default());
+
+        let id = comments.len() as i64 + 1;
+
+        let created_at = chrono::Utc::now();
+        let new_comment = structs::IssueComment {
+            id,
+            body: body.into(),
+            user: structs::Actor {
+                id: 1,
+                login: author.into(),
+            },
+            created_at,
+            updated_at: created_at,
+        };
+        comments.insert(id, new_comment.clone());
+        new_comment
+    }
 }
 
 impl GitHubServer {
@@ -136,6 +167,7 @@ impl GitHubServer {
             installations: HashMap::new(),
             repos: HashMap::new(),
             pulls: HashMap::new(),
+            comments: HashMap::new(),
         }
     }
 
@@ -225,6 +257,88 @@ impl GitHubServer {
             self = self.with_pull(full_repo_name, p);
         }
         self
+    }
+
+    pub fn mock_pull_comments(
+        &mut self,
+        full_repo_name: &str,
+        pull_number: i32,
+        expected_body: Option<String>,
+    ) -> mockito::Mock {
+        let mock = self
+            .server
+            .mock(
+                "POST",
+                format!("/repos/{}/issues/{}/comments", full_repo_name, pull_number).as_str(),
+            )
+            .with_status(200);
+
+        match expected_body {
+            None => mock,
+            Some(s) => mock.match_body(
+                serde_json::to_string(&structs::PostIssueComment { body: s })
+                    .unwrap()
+                    .as_str(),
+            ),
+        }
+        .create()
+    }
+
+    pub fn with_comments(
+        mut self,
+        full_repo_name: &str,
+        pull_number: i32,
+        comments: &[structs::IssueComment],
+    ) -> Self {
+        self.server
+            .mock(
+                "GET",
+                format!(
+                    "/repos/{}/issues/{}/comments?per_page=100&page=1",
+                    full_repo_name, pull_number
+                )
+                .as_str(),
+            )
+            .with_status(200)
+            .with_body(serde_json::to_string(&comments).unwrap())
+            .create();
+        self
+    }
+
+    pub fn mock_comment(
+        &mut self,
+        full_repo_name: &str,
+        comment_id: i64,
+        expected_body: String,
+    ) -> mockito::Mock {
+        let mock = self
+            .server
+            .mock(
+                "PATCH",
+                format!("/repos/{}/issues/comments/{}", full_repo_name, comment_id).as_str(),
+            )
+            .match_body(
+                serde_json::to_string(&structs::PostIssueComment {
+                    body: expected_body,
+                })
+                .unwrap()
+                .as_str(),
+            )
+            .with_status(200)
+            .create();
+        mock
+    }
+
+    pub fn mock_delete_comment(&mut self, full_repo_name: &str, comment_id: i64) -> mockito::Mock {
+        let mock = self
+            .server
+            .mock(
+                "DELETE",
+                format!("/repos/{}/issues/comments/{}", full_repo_name, comment_id).as_str(),
+            )
+            .with_status(200)
+            .create();
+        mock
     }
 }
 

@@ -57,6 +57,6 @@ async fn new_controller(server: &GitHubServer, init: bool) -> Controller {
 }
 
 mod tests_base;
-// mod tests_comments;
+mod tests_comments;
 mod tests_conflicts;
 mod tests_installations_repos;
