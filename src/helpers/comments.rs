@@ -36,6 +36,7 @@ impl CommentHeader {
         }
         let mut lines = Vec::new();
         for line in body.split('\n') {
+            let line = line.trim();
             if line.starts_with(HTML_COMMENT_START) {
                 continue;
             }
