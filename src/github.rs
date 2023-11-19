@@ -6,8 +6,6 @@ use std::time::Duration;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
-
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -20,6 +18,7 @@ const GITHUB_API_ROOT: &str = "https://api.github.com";
 const GITHUB_ROOT: &str = "https://github.com";
 
 const RETRYABLE_ERRORS: [u16; 4] = [429, 500, 502, 503];
+const FATAL_ERROR: u16 = 501; // HTTP 501 Not Implemented
 
 const MIN_TIMEOUT: Duration = Duration::from_secs(1);
 const MAX_TIMEOUT: Duration = Duration::from_secs(30);
@@ -86,38 +85,65 @@ impl ProgressiveTimeout {
     }
 }
 
-pub struct GitHub {}
+#[derive(Debug, Clone)]
+pub struct GitHub {
+    pub base_api_url: String,
+    pub base_url: String,
+}
+
+impl Default for GitHub {
+    fn default() -> Self {
+        Self::new(GITHUB_API_ROOT.into(), GITHUB_ROOT.into())
+    }
+}
+
 impl GitHub {
-    pub fn pulls(full_repo_name: &str) -> String {
-        format!("{GITHUB_API_ROOT}/repos/{full_repo_name}/pulls")
+    pub fn new(base_api_url: String, base_url: String) -> Self {
+        Self {
+            base_api_url,
+            base_url,
+        }
     }
-    pub fn app() -> String {
-        format!("{GITHUB_API_ROOT}/app")
+
+    pub fn pulls(&self, full_repo_name: &str) -> String {
+        format!("{}/repos/{full_repo_name}/pulls", self.base_api_url)
     }
-    pub fn app_installations() -> String {
-        format!("{GITHUB_API_ROOT}/app/installations")
+    pub fn app(&self) -> String {
+        format!("{}/app", self.base_api_url)
     }
-    pub fn installation_tokens(installation_id: i64) -> String {
-        format!("{GITHUB_API_ROOT}/app/installations/{installation_id}/access_tokens")
+    pub fn app_installations(&self) -> String {
+        format!("{}/app/installations", self.base_api_url)
     }
-    pub fn installation_repos() -> String {
-        format!("{GITHUB_API_ROOT}/installation/repositories")
+    pub fn installation_tokens(&self, installation_id: i64) -> String {
+        format!(
+            "{}/app/installations/{installation_id}/access_tokens",
+            self.base_api_url
+        )
     }
-    pub fn comments(full_repo_name: &str, issue_number: i32) -> String {
-        format!("{GITHUB_API_ROOT}/repos/{full_repo_name}/issues/{issue_number}/comments")
+    pub fn installation_repos(&self) -> String {
+        format!("{}/installation/repositories", self.base_api_url)
     }
-    pub fn issue_comment(full_repo_name: &str, comment_id: i64) -> String {
-        format!("{GITHUB_API_ROOT}/repos/{full_repo_name}/issues/comments/{comment_id}")
+    pub fn comments(&self, full_repo_name: &str, issue_number: i32) -> String {
+        format!(
+            "{}/repos/{full_repo_name}/issues/{issue_number}/comments",
+            self.base_api_url
+        )
+    }
+    pub fn issue_comment(&self, full_repo_name: &str, comment_id: i64) -> String {
+        format!(
+            "{}/repos/{full_repo_name}/issues/comments/{comment_id}",
+            self.base_api_url
+        )
     }
 
     // GitHub.com links
 
-    pub fn pull_url(full_repo_name: &str, pull_number: i32) -> String {
-        format!("{GITHUB_ROOT}/{full_repo_name}/pull/{pull_number}")
+    pub fn pull_url(&self, full_repo_name: &str, pull_number: i32) -> String {
+        format!("{}/{full_repo_name}/pull/{pull_number}", self.base_url)
     }
-    pub fn diff_url(full_repo_name: &str, pull_number: i32) -> String {
+    pub fn diff_url(&self, full_repo_name: &str, pull_number: i32) -> String {
         // Diff links are handled by github.com, not the API subdomain.
-        format!("{GITHUB_ROOT}/{full_repo_name}/pull/{pull_number}.diff")
+        format!("{}/{full_repo_name}/pull/{pull_number}.diff", self.base_url)
     }
 }
 
@@ -141,48 +167,9 @@ impl Token {
     }
 }
 
-#[async_trait]
-pub trait GitHubInterface {
-    fn new(app_id: String, key: String) -> Self;
-    async fn read_installations(&self) -> Result<Vec<structs::Installation>>;
-    fn cached_installations(&self) -> Vec<structs::Installation>;
-    fn cache_repositories(&self, installation_id: i64, repositories: Vec<structs::Repository>);
-    fn remove_repositories(&self, installation_id: i64, repositories: &[structs::Repository]);
-    async fn read_app(&self) -> Result<structs::App>;
-    async fn read_and_cache_installation_repos(
-        &self,
-        mut installation: structs::Installation,
-    ) -> Result<structs::Installation>;
-    fn remove_installation(&self, installation: &structs::Installation);
-    fn cached_repositories(&self, installation_id: i64) -> Vec<structs::Repository>;
-    async fn read_pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>>;
-    async fn post_comment(
-        &self,
-        full_repo_name: &str,
-        issue_number: i32,
-        body: String,
-    ) -> Result<()>;
-    async fn update_comment(
-        &self,
-        full_repo_name: &str,
-        comment_id: i64,
-        body: String,
-    ) -> Result<()>;
-    async fn delete_comment(&self, full_repo_name: &str, comment_id: i64) -> Result<()>;
-    async fn read_comments(
-        &self,
-        full_repo_name: &str,
-        issue_number: i32,
-    ) -> Result<Vec<structs::IssueComment>>;
-    async fn read_pull_diff(
-        &self,
-        full_repo_name: &str,
-        pull_number: i32,
-    ) -> Result<unidiff::PatchSet>;
-}
-
 #[derive(Debug, Clone)]
 pub struct Client {
+    pub github: GitHub,
     app_id: String,
     key: String,
     http_client: reqwest::Client,
@@ -291,6 +278,11 @@ async fn __text(rb: reqwest::RequestBuilder) -> Result<String> {
                         timer.sleep();
                         continue;
                     }
+
+                    if status.as_u16() == FATAL_ERROR {
+                        panic!("Fatal HTTP error: {}", logging_string);
+                    }
+
                     eyre::bail!(logging_string);
                 }
 
@@ -380,7 +372,7 @@ impl Client {
                 let jwt = self.get_jwt_token().await;
                 let req = self
                     .http_client
-                    .post(GitHub::installation_tokens(installation_id))
+                    .post(self.github.installation_tokens(installation_id))
                     .bearer_auth(jwt);
                 let response: structs::InstallationToken = __json(req).await?;
                 let token = Token {
@@ -396,10 +388,10 @@ impl Client {
     }
 }
 
-#[async_trait]
-impl GitHubInterface for Client {
-    fn new(app_id: String, key: String) -> Self {
+impl Client {
+    pub fn new(github: GitHub, app_id: String, key: String) -> Self {
         Self {
+            github,
             app_id,
             key,
             http_client: reqwest::Client::new(),
@@ -409,25 +401,20 @@ impl GitHubInterface for Client {
         }
     }
 
-    async fn read_app(&self) -> Result<structs::App> {
+    pub async fn read_app(&self) -> Result<structs::App> {
         let pp = self
             .http_client
-            .get(GitHub::app())
+            .get(self.github.app())
             .bearer_auth(self.get_jwt_token().await);
         let app: structs::App = __json(pp).await?;
         Ok(app)
     }
 
-    fn cached_installations(&self) -> Vec<structs::Installation> {
-        self.installations
-            .lock()
-            .unwrap()
-            .values()
-            .cloned()
-            .collect()
-    }
-
-    fn cache_repositories(&self, installation_id: i64, mut repositories: Vec<structs::Repository>) {
+    pub fn cache_repositories(
+        &self,
+        installation_id: i64,
+        mut repositories: Vec<structs::Repository>,
+    ) {
         if let Some(repos) = self.repos.lock().unwrap().get_mut(&installation_id) {
             let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
             repos.retain(|r| !ids.contains(&r.id));
@@ -435,23 +422,23 @@ impl GitHubInterface for Client {
         }
     }
 
-    fn remove_repositories(&self, installation_id: i64, repositories: &[structs::Repository]) {
+    pub fn remove_repositories(&self, installation_id: i64, repositories: &[structs::Repository]) {
         if let Some(repos) = self.repos.lock().unwrap().get_mut(&installation_id) {
             let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
             repos.retain(|r| !ids.contains(&r.id));
         }
     }
 
-    async fn read_installations(&self) -> Result<Vec<structs::Installation>> {
+    pub async fn read_installations(&self) -> Result<Vec<structs::Installation>> {
         let pp = self
             .http_client
-            .get(GitHub::app_installations())
+            .get(self.github.app_installations())
             .bearer_auth(self.get_jwt_token().await);
         let items: Vec<structs::Installation> = __json(pp).await?;
         Ok(items)
     }
 
-    async fn read_and_cache_installation_repos(
+    pub async fn read_and_cache_installation_repos(
         &self,
         installation: structs::Installation,
     ) -> Result<structs::Installation> {
@@ -465,10 +452,13 @@ impl GitHubInterface for Client {
                 Err(e)
             }
             Ok(token) => {
-                self.repos.lock().unwrap().insert(installation.id, Vec::new());
+                self.repos
+                    .lock()
+                    .unwrap()
+                    .insert(installation.id, Vec::new());
                 let req = self
                     .http_client
-                    .get(GitHub::installation_repos())
+                    .get(self.github.installation_repos())
                     .bearer_auth(token);
                 match __json::<structs::InstallationRepositories>(req).await {
                     Err(e) => {
@@ -484,14 +474,14 @@ impl GitHubInterface for Client {
         }
     }
 
-    fn cached_repositories(&self, installation_id: i64) -> Vec<structs::Repository> {
+    pub fn cached_repositories(&self, installation_id: i64) -> Vec<structs::Repository> {
         match self.repos.lock().unwrap().get(&installation_id) {
             Some(v) => v.clone(),
             None => Vec::new(),
         }
     }
 
-    fn remove_installation(&self, installation: &structs::Installation) {
+    pub fn remove_installation(&self, installation: &structs::Installation) {
         self.installations.lock().unwrap().remove(&installation.id);
         self.repos.lock().unwrap().remove(&installation.id);
         self.tokens
@@ -500,7 +490,7 @@ impl GitHubInterface for Client {
             .remove(&TokenType::Installation(installation.id));
     }
 
-    async fn read_pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>> {
+    pub async fn read_pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>> {
         let mut out = Vec::new();
         let token = self.pick_token(full_repo_name).await?;
         let per_page = 100;
@@ -508,7 +498,7 @@ impl GitHubInterface for Client {
         for page in 1..100 {
             let req = self
                 .http_client
-                .get(GitHub::pulls(full_repo_name))
+                .get(self.github.pulls(full_repo_name))
                 .query(&[
                     ("state", "open"),
                     ("direction", "asc"),
@@ -527,7 +517,7 @@ impl GitHubInterface for Client {
         Ok(out)
     }
 
-    async fn post_comment(
+    pub async fn post_comment(
         &self,
         full_repo_name: &str,
         issue_number: i32,
@@ -537,14 +527,14 @@ impl GitHubInterface for Client {
         let token = self.pick_token(full_repo_name).await?;
         let req = self
             .http_client
-            .post(GitHub::comments(full_repo_name, issue_number))
+            .post(self.github.comments(full_repo_name, issue_number))
             .body(comment)
             .bearer_auth(token);
         __json::<structs::IssueComment>(req).await?;
         Ok(())
     }
 
-    async fn update_comment(
+    pub async fn update_comment(
         &self,
         full_repo_name: &str,
         comment_id: i64,
@@ -554,24 +544,24 @@ impl GitHubInterface for Client {
         let token = self.pick_token(full_repo_name).await?;
         let req = self
             .http_client
-            .patch(GitHub::issue_comment(full_repo_name, comment_id))
+            .patch(self.github.issue_comment(full_repo_name, comment_id))
             .body(comment)
             .bearer_auth(token);
         __json::<structs::IssueComment>(req).await?;
         Ok(())
     }
 
-    async fn delete_comment(&self, full_repo_name: &str, comment_id: i64) -> Result<()> {
+    pub async fn delete_comment(&self, full_repo_name: &str, comment_id: i64) -> Result<()> {
         let token = self.pick_token(full_repo_name).await?;
         let req = self
             .http_client
-            .delete(GitHub::issue_comment(full_repo_name, comment_id))
+            .delete(self.github.issue_comment(full_repo_name, comment_id))
             .bearer_auth(token);
         __text(req).await?;
         Ok(())
     }
 
-    async fn read_comments(
+    pub async fn read_comments(
         &self,
         full_repo_name: &str,
         issue_number: i32,
@@ -583,7 +573,7 @@ impl GitHubInterface for Client {
         for page in 1..100 {
             let req = self
                 .http_client
-                .get(GitHub::comments(full_repo_name, issue_number))
+                .get(self.github.comments(full_repo_name, issue_number))
                 .query(&[
                     ("per_page", &per_page.to_string()),
                     ("page", &page.to_string()),
@@ -599,7 +589,7 @@ impl GitHubInterface for Client {
         Ok(out)
     }
 
-    async fn read_pull_diff(
+    pub async fn read_pull_diff(
         &self,
         full_repo_name: &str,
         pull_number: i32,
@@ -607,7 +597,7 @@ impl GitHubInterface for Client {
         let token = self.pick_token(full_repo_name).await?;
         let req = self
             .http_client
-            .get(GitHub::diff_url(full_repo_name, pull_number))
+            .get(self.github.diff_url(full_repo_name, pull_number))
             .bearer_auth(token);
         let response = __text(req).await?;
         Ok(unidiff::PatchSet::from_str(&response)?)

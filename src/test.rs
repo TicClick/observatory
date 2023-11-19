@@ -1,34 +1,10 @@
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
-use eyre::Result;
-
-use crate::github;
+use crate::github::GitHub;
 use crate::structs;
 
-pub fn pull_link(full_repo_name: &str, pull_number: i32) -> String {
-    github::GitHub::pull_url(full_repo_name, pull_number)
-}
-
-pub fn make_pull(pull_id: i64, file_names: &[&str]) -> structs::PullRequest {
-    let now = chrono::Utc::now();
-    structs::PullRequest {
-        id: pull_id,
-        number: pull_id as i32,
-        state: "open".to_string(),
-        title: "Update `Ranking criteria`".to_string(),
-        user: structs::Actor {
-            id: 1,
-            login: "BanchoBot".to_string(),
-        },
-        html_url: pull_link("test/repo", pull_id as i32),
-        created_at: now,
-        updated_at: now,
-        diff: Some(make_simple_diff(file_names)),
-    }
-}
+pub static TEST_APP_ID: i64 = 123;
 
 pub fn make_simple_diff(file_names: &[&str]) -> unidiff::PatchSet {
     let diff: Vec<String> = file_names
@@ -54,295 +30,327 @@ index 5483f282a0a..2c8c1482b97 100644
     unidiff::PatchSet::from_str(&diff.join("\n")).unwrap()
 }
 
-pub struct DummyGitHubClient {
-    app_id: String,
+pub struct GitHubServer {
+    pub server: mockito::ServerGuard,
+    pub url: GitHub,
 
-    // Github mock information
-    last_installation_id: Arc<Mutex<i64>>,
-    installations: Arc<Mutex<HashMap<i64, structs::Installation>>>,
-
-    last_pull_id: Arc<Mutex<i64>>,
-    pulls: Arc<Mutex<HashMap<String, Vec<structs::PullRequest>>>>,
-
-    last_comment_id: Arc<Mutex<i64>>,
-    comments: Arc<Mutex<HashMap<String, HashMap<i32, Vec<structs::IssueComment>>>>>,
-
-    last_repo_id: Arc<Mutex<i64>>,
-    repos: Arc<Mutex<HashMap<i64, Vec<structs::Repository>>>>,
+    pub installations: HashMap<i64, structs::Installation>, // installation id -> object
+    pub repos: HashMap<i64, HashMap<String, structs::Repository>>, // installation id -> full repository name -> object
+    pub pulls: HashMap<String, HashMap<i32, structs::PullRequest>>, // full repository name -> pull number -> object
+    pub comments: HashMap<String, HashMap<i32, HashMap<i64, structs::IssueComment>>>, // full repository name -> pull number -> comment id -> object
 }
 
-#[async_trait]
-impl github::GitHubInterface for DummyGitHubClient {
-    fn new(app_id: String, _key: String) -> Self {
-        Self {
-            app_id,
-
-            last_installation_id: Arc::new(Mutex::new(1)),
-            installations: Arc::default(),
-
-            last_pull_id: Arc::new(Mutex::new(1)),
-            pulls: Arc::default(),
-
-            last_comment_id: Arc::new(Mutex::new(1)),
-            comments: Arc::default(),
-
-            last_repo_id: Arc::new(Mutex::new(1)),
-            repos: Arc::default(),
-        }
-    }
-
-    async fn read_installations(&self) -> Result<Vec<structs::Installation>> {
-        Ok(self.cached_installations())
-    }
-
-    fn cached_installations(&self) -> Vec<structs::Installation> {
-        self.installations
-            .lock()
-            .unwrap()
-            .values()
-            .cloned()
-            .collect()
-    }
-
-    fn cache_repositories(&self, installation_id: i64, mut repositories: Vec<structs::Repository>) {
-        if let Some(repos) = self.repos.lock().unwrap().get_mut(&installation_id) {
-            let ids: Vec<_> = repos.iter().map(|r| r.id).collect();
-            repos.retain(|r| !ids.contains(&r.id));
-            repos.append(&mut repositories);
-        }
-    }
-
-    fn remove_repositories(&self, installation_id: i64, repositories: &[structs::Repository]) {
-        if let Some(repos) = self.repos.lock().unwrap().get_mut(&installation_id) {
-            let ids: Vec<_> = repositories.iter().map(|r| r.id).collect();
-            repos.retain(|r| !ids.contains(&r.id));
-        }
-    }
-
-    async fn read_app(&self) -> Result<structs::App> {
-        Ok(structs::App {
-            id: self.app_id.parse().unwrap(),
-            slug: "test-app".to_string(),
+impl GitHubServer {
+    pub fn make_app(&self) -> structs::App {
+        structs::App {
+            id: TEST_APP_ID,
+            slug: "test-app".into(),
             owner: structs::Actor {
                 id: 1,
-                login: "test-owner".to_string(),
+                login: "TicClick".into(),
             },
-            name: "Test GitHub app".to_string(),
-        })
-    }
-
-    async fn read_and_cache_installation_repos(
-        &self,
-        installation: structs::Installation,
-    ) -> Result<structs::Installation> {
-        self.installations
-            .lock()
-            .unwrap()
-            .insert(installation.id, installation.clone());
-        Ok(installation)
-    }
-
-    fn cached_repositories(&self, installation_id: i64) -> Vec<structs::Repository> {
-        match self.repos.lock().unwrap().get(&installation_id) {
-            Some(v) => v.clone(),
-            None => Vec::new(),
+            name: "observatory-test-app".into(),
         }
     }
 
-    fn remove_installation(&self, installation: &structs::Installation) {
-        self.installations.lock().unwrap().remove(&installation.id);
-        self.repos.lock().unwrap().remove(&installation.id);
-    }
-
-    async fn read_pulls(&self, full_repo_name: &str) -> Result<Vec<structs::PullRequest>> {
-        match self.pulls.lock().unwrap().get(&full_repo_name.to_string()) {
-            Some(v) => Ok(v.clone()),
-            None => Ok(Vec::new()),
-        }
-    }
-
-    async fn post_comment(
-        &self,
-        full_repo_name: &str,
-        issue_number: i32,
-        body: String,
-    ) -> Result<()> {
-        let now = chrono::Utc::now();
-        let mut last_comment_id = self.last_comment_id.lock().unwrap();
-
-        let mut guard = self.comments.lock().unwrap();
-        let pull_comments = guard
-            .entry(full_repo_name.to_string())
-            .or_default()
-            .entry(issue_number)
-            .or_default();
-        pull_comments.push(structs::IssueComment {
-            id: *last_comment_id,
-            body,
-            user: structs::Actor {
-                id: 1,
-                login: "test-app[bot]".to_string(),
-            },
-            created_at: now,
-            updated_at: now,
-        });
-
-        *last_comment_id += 1;
-        Ok(())
-    }
-
-    async fn update_comment(
-        &self,
-        full_repo_name: &str,
-        comment_id: i64,
-        body: String,
-    ) -> Result<()> {
-        if let Some(comments) = self.comments.lock().unwrap().get_mut(full_repo_name) {
-            for comments_per_pull in comments.values_mut() {
-                for c in comments_per_pull.iter_mut() {
-                    if c.id == comment_id {
-                        c.body = body;
-                        c.updated_at = chrono::Utc::now();
-                        return Ok(());
-                    }
-                }
-            }
-        }
-        eyre::bail!("no comment {} found", comment_id);
-    }
-
-    async fn delete_comment(&self, full_repo_name: &str, comment_id: i64) -> Result<()> {
-        let mut found = false;
-        if let Some(comments) = self.comments.lock().unwrap().get_mut(full_repo_name) {
-            for comments_per_pull in comments.values_mut() {
-                comments_per_pull.retain(|c| {
-                    if c.id == comment_id {
-                        found = true;
-                    }
-                    c.id != comment_id
-                });
-            }
-        }
-        if !found {
-            eyre::bail!("no comment {} found", comment_id);
-        }
-        Ok(())
-    }
-
-    async fn read_comments(
-        &self,
-        full_repo_name: &str,
-        issue_number: i32,
-    ) -> Result<Vec<structs::IssueComment>> {
-        if let Some(comments) = self.comments.lock().unwrap().get(full_repo_name) {
-            if let Some(pull_comments) = comments.get(&issue_number) {
-                return Ok(pull_comments.clone());
-            }
-        }
-        Ok(Vec::new())
-    }
-
-    async fn read_pull_diff(
-        &self,
-        full_repo_name: &str,
-        pull_number: i32,
-    ) -> Result<unidiff::PatchSet> {
-        if let Some(pulls) = self.pulls.lock().unwrap().get(full_repo_name) {
-            for p in pulls.iter().filter(|p_| p_.number == pull_number) {
-                if let Some(diff) = &p.diff {
-                    return Ok(diff.clone());
-                }
-            }
-        }
-        eyre::bail!("no diff found for pull {}", pull_number);
-    }
-}
-
-impl DummyGitHubClient {
-    pub fn test_add_installation(&self) -> structs::Installation {
-        let mut last_installation_id = self.last_installation_id.lock().unwrap();
-        let inst = structs::Installation {
-            id: *last_installation_id,
+    pub fn make_installation(&mut self) -> structs::Installation {
+        let id = self.installations.len() as i64 + 1;
+        let new_installation = structs::Installation {
+            id,
             account: structs::Actor {
-                id: 12,
-                login: "test-user".into(),
+                id: 1,
+                login: "TicClick".into(),
             },
-            app_id: 123,
+            app_id: TEST_APP_ID,
         };
-        self.installations
-            .lock()
-            .unwrap()
-            .insert(*last_installation_id, inst.clone());
-        *last_installation_id += 1;
-        inst
+        self.installations.insert(id, new_installation.clone());
+        new_installation
     }
 
-    pub fn test_add_repository(
-        &self,
-        installation_id: i64,
-        full_repo_name: &str,
-    ) -> structs::Repository {
-        let mut last_repo_id = self.last_repo_id.lock().unwrap();
-        let r = structs::Repository {
-            id: *last_repo_id,
+    pub fn make_repo(&mut self, installation_id: i64, full_repo_name: &str) -> structs::Repository {
+        let repos = self
+            .repos
+            .entry(installation_id)
+            .or_insert(HashMap::default());
+        let id = repos.len() as i64 + 1;
+
+        let new_repo = structs::Repository {
+            id,
             name: full_repo_name.split("/").last().unwrap().into(),
             full_name: full_repo_name.into(),
             fork: None,
             owner: None,
         };
-
-        *last_repo_id += 1;
-        self.repos
-            .lock()
-            .unwrap()
-            .entry(installation_id)
-            .or_default()
-            .push(r.clone());
-        r
+        repos.insert(full_repo_name.into(), new_repo.clone());
+        new_repo
     }
 
-    pub fn test_add_pull(&self, full_repo_name: &str, file_names: &[&str]) -> structs::PullRequest {
-        let mut last_pull_id = self.last_pull_id.lock().unwrap();
-        let pull = make_pull(*last_pull_id, file_names);
-        *last_pull_id += 1;
-        self.pulls
-            .lock()
-            .unwrap()
-            .entry(full_repo_name.to_string())
-            .or_default()
-            .push(pull.clone());
-        pull
-    }
-
-    pub fn test_update_pull(&self, full_repo_name: &str, pull_number: i32, file_names: &[&str]) {
-        for p in self
+    pub fn make_pull(&mut self, full_repo_name: &str, file_names: &[&str]) -> structs::PullRequest {
+        let pulls = self
             .pulls
-            .lock()
-            .unwrap()
-            .entry(full_repo_name.to_string())
-            .or_default()
-        {
-            if p.number == pull_number {
-                p.diff = Some(make_simple_diff(file_names));
-                p.updated_at = chrono::Utc::now();
-                return;
+            .entry(full_repo_name.into())
+            .or_insert(HashMap::default());
+        let id = pulls.len() as i64 + 1;
+        let number = id as i32;
+
+        let now = chrono::Utc::now();
+        let new_pull = structs::PullRequest {
+            id,
+            number,
+            state: "open".to_string(),
+            title: "Update `Ranking criteria`".to_string(),
+            user: structs::Actor {
+                id: 2,
+                login: "BanchoBot".to_string(),
+            },
+            html_url: self.url.pull_url(full_repo_name, number),
+            created_at: now,
+            updated_at: now,
+            diff: Some(make_simple_diff(file_names)),
+        };
+        pulls.insert(number, new_pull.clone());
+        new_pull
+    }
+
+    pub fn change_pull_diff(
+        &mut self,
+        full_repo_name: &str,
+        number: i32,
+        file_names: &[&str],
+    ) -> structs::PullRequest {
+        let pulls = self.pulls.get_mut(full_repo_name).unwrap();
+        let pull = pulls.get_mut(&number).unwrap();
+        pull.diff = Some(make_simple_diff(file_names));
+        pull.updated_at = chrono::Utc::now();
+        pull.clone()
+    }
+
+    pub fn make_comment(
+        &mut self,
+        full_repo_name: &str,
+        pull_number: i32,
+        body: &str,
+        author: &str,
+    ) -> structs::IssueComment {
+        let pulls = self
+            .comments
+            .entry(full_repo_name.into())
+            .or_insert(HashMap::default());
+        let comments = pulls.entry(pull_number).or_insert(HashMap::default());
+
+        let id = comments.len() as i64 + 1;
+
+        let created_at = chrono::Utc::now();
+        let new_comment = structs::IssueComment {
+            id,
+            body: body.into(),
+            user: structs::Actor {
+                id: 1,
+                login: author.into(),
+            },
+            created_at,
+            updated_at: created_at,
+        };
+        comments.insert(id, new_comment.clone());
+        new_comment
+    }
+}
+
+impl GitHubServer {
+    pub fn new() -> Self {
+        let server = mockito::Server::new();
+        let gh = GitHub::new(server.url(), server.url());
+
+        Self {
+            server,
+            url: gh,
+            installations: HashMap::new(),
+            repos: HashMap::new(),
+            pulls: HashMap::new(),
+            comments: HashMap::new(),
+        }
+    }
+
+    pub fn with_github_app(mut self, app: &structs::App) -> Self {
+        self.server
+            .mock("GET", "/app")
+            .with_status(200)
+            .with_body(serde_json::to_string(app).unwrap())
+            .create();
+        self
+    }
+
+    pub fn with_app_installations(
+        mut self,
+        installations: &[(structs::Installation, Vec<structs::Repository>)],
+    ) -> Self {
+        let ii: Vec<_> = installations.iter().cloned().map(|i| i.0).collect();
+
+        self.server
+            .mock("GET", "/app/installations")
+            .with_status(200)
+            .with_body(serde_json::to_string(&ii).unwrap())
+            .create();
+
+        for (i, rr) in installations {
+            let token_str = format!("fake-access-token-installation-{}", i.id);
+            let token = structs::InstallationToken {
+                token: token_str,
+                expires_at: chrono::Utc::now() + chrono::Duration::minutes(30),
+                repositories: None,
+                permissions: HashMap::<String, String>::from_iter([(
+                    "pulls".to_owned(),
+                    "write".to_owned(),
+                )]),
+            };
+            self.server
+                .mock(
+                    "POST",
+                    format!("/app/installations/{}/access_tokens", i.id).as_str(),
+                )
+                .with_status(201)
+                .with_body(serde_json::to_string(&token).unwrap())
+                .create();
+
+            let repos_response = structs::InstallationRepositories {
+                total_count: rr.len() as i32,
+                repositories: rr.to_vec(),
+            };
+
+            self.server
+                .mock("GET", "/installation/repositories")
+                .with_status(200)
+                .with_body(serde_json::to_string(&repos_response).unwrap())
+                .create();
+
+            for r in rr {
+                let prs = match self.pulls.get(&r.full_name) {
+                    Some(pp) => pp.values().cloned().collect(),
+                    None => Vec::new(),
+                };
+                self.server
+                    .mock("GET", format!("/repos/{}/pulls?state=open&direction=asc&sort=created&per_page=100&page=1", r.full_name).as_str())
+                    .with_status(200)
+                    .with_body(serde_json::to_string(&prs).unwrap())
+                    .create();
             }
         }
-        panic!("no pull #{pull_number}");
+        self
     }
 
-    pub fn fetch_pull(&self, full_repo_name: &str, pull_number: i32) -> structs::PullRequest {
-        for p in self
-            .pulls
-            .lock()
-            .unwrap()
-            .entry(full_repo_name.to_string())
-            .or_default()
-        {
-            if p.number == pull_number {
-                return p.clone();
-            }
+    pub fn with_pull(mut self, full_repo_name: &str, pull: &structs::PullRequest) -> Self {
+        if let Some(ref diff) = pull.diff {
+            self.server
+                .mock(
+                    "GET",
+                    format!("/{}/pull/{}.diff", full_repo_name, pull.number).as_str(),
+                )
+                .with_status(200)
+                .with_body(diff.to_string())
+                .create();
         }
-        panic!("no pull #{pull_number}");
+        self
+    }
+
+    pub fn with_pulls(mut self, full_repo_name: &str, pulls: &[structs::PullRequest]) -> Self {
+        for p in pulls {
+            self = self.with_pull(full_repo_name, p);
+        }
+        self
+    }
+
+    pub fn mock_pull_comments(
+        &mut self,
+        full_repo_name: &str,
+        pull_number: i32,
+        expected_body: Option<String>,
+    ) -> mockito::Mock {
+        let mock = self
+            .server
+            .mock(
+                "POST",
+                format!("/repos/{}/issues/{}/comments", full_repo_name, pull_number).as_str(),
+            )
+            .with_status(200);
+
+        match expected_body {
+            None => mock,
+            Some(s) => mock.match_body(
+                serde_json::to_string(&structs::PostIssueComment { body: s })
+                    .unwrap()
+                    .as_str(),
+            ),
+        }
+        .create()
+    }
+
+    pub fn with_comments(
+        mut self,
+        full_repo_name: &str,
+        pull_number: i32,
+        comments: &[structs::IssueComment],
+    ) -> Self {
+        self.server
+            .mock(
+                "GET",
+                format!(
+                    "/repos/{}/issues/{}/comments?per_page=100&page=1",
+                    full_repo_name, pull_number
+                )
+                .as_str(),
+            )
+            .with_status(200)
+            .with_body(serde_json::to_string(&comments).unwrap())
+            .create();
+        self
+    }
+
+    pub fn mock_comment(
+        &mut self,
+        full_repo_name: &str,
+        comment_id: i64,
+        expected_body: String,
+    ) -> mockito::Mock {
+        let mock = self
+            .server
+            .mock(
+                "PATCH",
+                format!("/repos/{}/issues/comments/{}", full_repo_name, comment_id).as_str(),
+            )
+            .match_body(
+                serde_json::to_string(&structs::PostIssueComment {
+                    body: expected_body,
+                })
+                .unwrap()
+                .as_str(),
+            )
+            .with_status(200)
+            .create();
+        mock
+    }
+
+    pub fn mock_delete_comment(&mut self, full_repo_name: &str, comment_id: i64) -> mockito::Mock {
+        let mock = self
+            .server
+            .mock(
+                "DELETE",
+                format!("/repos/{}/issues/comments/{}", full_repo_name, comment_id).as_str(),
+            )
+            .with_status(200)
+            .create();
+        mock
+    }
+}
+
+impl GitHubServer {
+    pub fn with_default_github_app(self) -> Self {
+        let app = self.make_app();
+        self.with_github_app(&app)
+    }
+
+    pub fn with_default_app_installations(mut self) -> Self {
+        let installation = self.make_installation();
+        let repo = self.make_repo(installation.id, "test/repo");
+        self.with_app_installations(&[(installation, vec![repo])])
     }
 }

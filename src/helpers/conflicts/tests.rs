@@ -1,13 +1,14 @@
 use super::*;
 
-use crate::test::{self, pull_link};
+use crate::{github, test};
 
 #[test]
 fn conflict_to_markdown() {
+    let gh = github::GitHub::default();
     let c1 = Conflict::overlap(
         1,
         2,
-        pull_link("test/repo", 2),
+        gh.pull_url("test/repo", 2),
         vec!["wiki/Ranking_Criteria/en.md".to_string()],
     );
     assert_eq!(
@@ -27,7 +28,7 @@ conflict_type: Overlap
     let c2 = Conflict::incomplete_translation(
         2,
         3,
-        pull_link("test/repo", 3),
+        gh.pull_url("test/repo", 3),
         vec!["wiki/Ranking_criteria/en.md".to_string(); 11],
     );
     assert_eq!(
@@ -65,29 +66,37 @@ fn article_basic() {
 
 #[test]
 fn different_paths_no_conflict() {
-    let existing_pull = test::make_pull(1, &["wiki/First_article/en.md"]);
-    let new_pull = test::make_pull(2, &["wiki/Second_article/en.md"]);
+    let mut gh = test::GitHubServer::new();
+
+    let existing_pull = gh.make_pull("test/repo", &["wiki/First_article/en.md"]);
+    let new_pull = gh.make_pull("test/repo", &["wiki/Second_article/en.md"]);
+
     assert!(compare_pulls(&new_pull, &existing_pull).is_empty());
 }
 
 #[test]
 fn no_markdown_no_conflict() {
-    let existing_pull = test::make_pull(1, &["wiki/First_article/img/test.png"]);
-    let new_pull = test::make_pull(2, &["wiki/First_article/img/test.png"]);
+    let mut gh = test::GitHubServer::new();
+
+    let existing_pull = gh.make_pull("test/repo", &["wiki/First_article/img/test.png"]);
+    let new_pull = gh.make_pull("test/repo", &["wiki/First_article/img/test.png"]);
+
     assert!(compare_pulls(&new_pull, &existing_pull).is_empty());
 }
 
 #[test]
 fn single_file_overlap() {
-    let existing_pull = test::make_pull(1, &["wiki/Article/en.md"]);
-    let new_pull = test::make_pull(2, &["wiki/Article/en.md"]);
+    let mut gh = test::GitHubServer::new();
+
+    let existing_pull = gh.make_pull("test/repo", &["wiki/Article/en.md"]);
+    let new_pull = gh.make_pull("test/repo", &["wiki/Article/en.md"]);
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
         vec![Conflict::overlap(
             2,
             1,
-            pull_link("test/repo", 1),
+            gh.url.pull_url("test/repo", 1),
             vec!["wiki/Article/en.md".to_string()],
         )]
     );
@@ -95,8 +104,10 @@ fn single_file_overlap() {
 
 #[test]
 fn multiple_files_overlap() {
-    let existing_pull = test::make_pull(
-        1,
+    let mut gh = test::GitHubServer::new();
+
+    let existing_pull = gh.make_pull(
+        "test/repo",
         &[
             "wiki/Article/en.md",
             "wiki/Ranking_criteria/en.md",
@@ -104,8 +115,8 @@ fn multiple_files_overlap() {
             "wiki/Unrelated_article/ru.md",
         ],
     );
-    let new_pull = test::make_pull(
-        2,
+    let new_pull = gh.make_pull(
+        "test/repo",
         &[
             "wiki/Ranking_criteria/en.md",
             "wiki/Article/en.md",
@@ -119,7 +130,7 @@ fn multiple_files_overlap() {
         vec![Conflict::overlap(
             2,
             1,
-            pull_link("test/repo", 1),
+            gh.url.pull_url("test/repo", 1),
             vec![
                 "wiki/Article/en.md".to_string(),
                 "wiki/Ranking_criteria/en.md".to_string(),
@@ -131,7 +142,7 @@ fn multiple_files_overlap() {
         vec![Conflict::overlap(
             1,
             2,
-            pull_link("test/repo", 2),
+            gh.url.pull_url("test/repo", 2),
             vec![
                 "wiki/Article/en.md".to_string(),
                 "wiki/Ranking_criteria/en.md".to_string(),
@@ -142,15 +153,17 @@ fn multiple_files_overlap() {
 
 #[test]
 fn existing_translation_becomes_incomplete() {
-    let existing_pull = test::make_pull(1, &["wiki/Article/ru.md"]);
-    let new_pull = test::make_pull(2, &["wiki/Article/en.md"]);
+    let mut gh = test::GitHubServer::new();
+
+    let existing_pull = gh.make_pull("test/repo", &["wiki/Article/ru.md"]);
+    let new_pull = gh.make_pull("test/repo", &["wiki/Article/en.md"]);
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
         vec![Conflict::incomplete_translation(
             1,
             2,
-            pull_link("test/repo", 2),
+            gh.url.pull_url("test/repo", 2),
             vec!["wiki/Article/en.md".to_string(),],
         )]
     );
@@ -158,15 +171,17 @@ fn existing_translation_becomes_incomplete() {
 
 #[test]
 fn new_translation_marked_as_incomplete() {
-    let existing_pull = test::make_pull(1, &["wiki/Article/en.md"]);
-    let new_pull = test::make_pull(2, &["wiki/Article/ru.md"]);
+    let mut gh = test::GitHubServer::new();
+
+    let existing_pull = gh.make_pull("test/repo", &["wiki/Article/en.md"]);
+    let new_pull = gh.make_pull("test/repo", &["wiki/Article/ru.md"]);
 
     assert_eq!(
         compare_pulls(&new_pull, &existing_pull),
         vec![Conflict::incomplete_translation(
             2,
             1,
-            pull_link("test/repo", 1),
+            gh.url.pull_url("test/repo", 1),
             vec!["wiki/Article/en.md".to_string(),],
         )]
     );
