@@ -160,15 +160,27 @@ pub fn compare_pulls(
 
     let mut is_new_translation = false;
 
-    for incoming in new_diff
-        .files()
-        .iter()
-        .filter(|fp| fp.target_file.ends_with(".md"))
-    {
+    // Only consider Markdown files, and among these, exclude non-articles such as the tournament template
+    // (https://github.com/TicClick/observatory/issues/17)
+    let article_expr = regex::Regex::new(r"^(..|..-..)\.md$").unwrap();
+    let article_filter = |p: &&unidiff::PatchedFile| -> bool {
+        let parts = std::path::Path::new(&p.target_file);
+        if let Some(filename) = parts.file_name() {
+            if let Some(filename_cstr) = filename.to_str() {
+                article_expr.is_match(filename_cstr)
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    };
+
+    for incoming in new_diff.files().iter().filter(article_filter) {
         let other_files: BTreeSet<_> = other_diff
             .files()
             .iter()
-            .filter(|patched| patched.target_file.ends_with(".md"))
+            .filter(article_filter)
             .map(|patched| patched.path())
             .collect();
         for other in other_files.iter() {
