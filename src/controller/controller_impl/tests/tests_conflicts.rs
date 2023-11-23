@@ -875,3 +875,31 @@ async fn test_only_obsolete_conflict_is_removed_incomplete_translation() {
         )]
     );
 }
+
+#[tokio::test]
+async fn test_non_article_files_are_skipped() {
+    let mut server = GitHubServer::new()
+        .with_default_github_app()
+        .with_default_app_installations();
+
+    let pulls = [
+        server.make_pull(
+            "test/repo",
+            &["wiki/Article/en.md", "wiki/Tournaments/TEMPLATE.md"],
+        ),
+        server.make_pull(
+            "test/repo",
+            &["wiki/Other_article/ru.md", "wiki/Tournaments/TEMPLATE.md"],
+        ),
+    ];
+
+    server = server.with_pulls("test/repo", &pulls);
+
+    let c = new_controller(&server, true).await;
+    for p in pulls.iter() {
+        c.upsert_pull("test/repo", p.clone(), false).await.unwrap();
+    }
+
+    assert!(c.conflicts.by_trigger("test/repo", 1).is_empty());
+    assert!(c.conflicts.by_trigger("test/repo", 2).is_empty());
+}
