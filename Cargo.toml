@@ -6,25 +6,25 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = { version = "0.4.23", features = ["serde"] }
-clap = { version = "4.1.6", features = ["derive"] }
-eyre = "0.6.8"
-jsonwebtoken = "8.2.0"
-log = "0.4.17"
+chrono = { version = "0.4.31", features = ["serde"] }
+clap = { version = "4.4.8", features = ["derive"] }
+eyre = "0.6.9"
+jsonwebtoken = "9.1.0"
+log = "0.4.20"
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
-reqwest = { version = "0.11.14", features = ["json", "serde_json", "gzip"] }
-serde = "1.0.152"
-serde_json = "1.0.93"
-serde_yaml = "0.9.17"
-simplelog = "0.12.0"
-tokio = { version = "1.25.0", features = ["rt", "macros", "rt-multi-thread"] }
+reqwest = { version = "0.11.22", features = ["json", "serde_json", "gzip"] }
+serde = "1.0.193"
+serde_json = "1.0.108"
+serde_yaml = "0.9.27"
+simplelog = "0.12.1"
+tokio = { version = "1.34.0", features = ["rt", "macros", "rt-multi-thread"] }
 unidiff = "0.3.3"
-viz = { version = "0.4.8", features = ["json", "limits"] }
+viz = { version = "0.4.17", features = ["json", "limits"] }
 
 # for simplelog format
-time = "0.3.19"
+time = "0.3.30"
 hmac = "0.12.1"
-ring = "0.16.20"
-async-trait = "0.1.64"
+ring = "0.17.5"
+async-trait = "0.1.74"
 mockito = "1.2.0"
 regex = "1.10.2"
