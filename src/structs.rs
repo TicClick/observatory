@@ -31,9 +31,9 @@ pub struct PullRequest {
     pub html_url: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
-
     #[serde(skip)]
     pub diff: Option<unidiff::PatchSet>,
+    pub merged: bool,
 }
 
 // https://docs.github.com/en/developers/webhooks-and-events/webhooks/webhook-events-and-payloads#pull_request

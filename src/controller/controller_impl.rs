@@ -96,7 +96,7 @@ impl Controller {
                 full_repo_name,
                 pull_request,
             } => {
-                self.remove_pull(&full_repo_name, *pull_request);
+                self.finalize_pull(&full_repo_name, *pull_request).await;
             }
 
             ControllerRequest::InstallationCreated { installation } => {
@@ -224,9 +224,27 @@ impl Controller {
     }
 
     /// Purge a pull request from memory, excluding it from conflict detection.
+    /// If a request contains original articles and has just been merged, send notifications to pull requests with translations.
     ///
     /// This should be done only when a pull request is closed or merged.
-    fn remove_pull(&self, full_repo_name: &str, closed_pull: PullRequest) {
+    async fn finalize_pull(&self, full_repo_name: &str, closed_pull: PullRequest) {
+        // https://github.com/TicClick/observatory/issues/12
+        if closed_pull.merged {
+            let conflicts = self
+                .conflicts
+                .by_original(full_repo_name, closed_pull.number);
+            let mut pending_updates: HashMap<i32, Vec<conflicts::Conflict>> = HashMap::new();
+            for c in conflicts
+                .into_iter()
+                .filter(|c| matches!(c.kind, ConflictType::IncompleteTranslation))
+            {
+                pending_updates.entry(c.trigger).or_default().push(c);
+            }
+            let _ = self
+                .send_updates(pending_updates, HashMap::new(), full_repo_name)
+                .await;
+        }
+
         self.memory.remove_pull(full_repo_name, &closed_pull);
         self.conflicts
             .remove_conflicts_by_pull(full_repo_name, closed_pull.number);
@@ -306,10 +324,14 @@ impl Controller {
                 for conflict in conflicts {
                     if let Some(updated_conflict) = self.conflicts.upsert(full_repo_name, &conflict)
                     {
-                        pending_updates
-                            .entry(updated_conflict.trigger)
-                            .or_default()
-                            .push(updated_conflict);
+                        // https://github.com/TicClick/observatory/issues/12: Don't notify translators before the original
+                        // pull has been merged in to avoid creating extra work for them.
+                        if !matches!(updated_conflict.kind, ConflictType::IncompleteTranslation) {
+                            pending_updates
+                                .entry(updated_conflict.trigger)
+                                .or_default()
+                                .push(updated_conflict);
+                        }
                     }
                 }
             }
@@ -325,7 +347,7 @@ impl Controller {
     /// `(conflict source, conflict type)` combination.
     ///
     /// Every comment contains a machine-readable YAML header, hidden between separate HTML comment tags.
-    /// The header is a reliable alternative to parsing everything from comments (provided no one tampers with them).
+    /// The header is a reliable alternative to parsing everything from comments (provided no one tampers with it).
     ///
     /// Comments already left by the bot are reused for updates, both to avoid spam and make notification process easier.
     /// Comments about obsolete conflicts are removed; the lists of conflicts to update and to remove have no intersection.

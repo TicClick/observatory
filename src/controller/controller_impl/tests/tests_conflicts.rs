@@ -718,7 +718,7 @@ async fn test_closed_pull_is_removed() {
         .await
         .unwrap();
 
-    c.remove_pull("test/repo", pull);
+    c.finalize_pull("test/repo", pull).await;
     assert!(c.memory.pulls("test/repo").unwrap().is_empty());
 }
 
@@ -743,7 +743,7 @@ async fn test_closed_pull_conflicts_removed() {
         c.upsert_pull("test/repo", p.clone(), false).await.unwrap();
     }
 
-    c.remove_pull("test/repo", pulls[2].clone());
+    c.finalize_pull("test/repo", pulls[2].clone()).await;
     assert!(&c.conflicts.by_trigger("test/repo", 3).is_empty());
 }
 
@@ -766,7 +766,7 @@ async fn test_closed_pull_related_conflicts_removed() {
         c.upsert_pull("test/repo", p.clone(), false).await.unwrap();
     }
 
-    c.remove_pull("test/repo", pulls[0].clone());
+    c.finalize_pull("test/repo", pulls[0].clone()).await;
     for p in pulls.iter().skip(1) {
         assert!(c.conflicts.by_original("test/repo", p.number).is_empty());
         assert!(c.conflicts.by_trigger("test/repo", p.number).is_empty());

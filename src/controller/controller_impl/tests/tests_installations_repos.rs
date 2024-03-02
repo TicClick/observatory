@@ -280,7 +280,7 @@ async fn test_remove_pull() {
         .with_pulls("test/my-repo", &pulls);
 
     c.init().await.unwrap();
-    c.remove_pull("test/my-repo", pulls[1].clone());
+    c.finalize_pull("test/my-repo", pulls[1].clone()).await;
 
     let repos = c.memory.pulls.lock().unwrap();
     let first_repo = repos.get("test/my-repo").unwrap();
