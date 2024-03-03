@@ -17,8 +17,8 @@ pub enum ConflictType {
     /// Target = new pull, reference = old pull.
     Overlap,
 
-    /// A new pull request affects an article for which there's a translation open.
-    /// Target = old pull (translation), reference = new pull (original).
+    /// A merged pull request affects an article for which there's a translation open.
+    /// Target = old pull (translation), reference = merged pull (original).
     IncompleteTranslation,
 }
 

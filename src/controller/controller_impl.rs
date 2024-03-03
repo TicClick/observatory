@@ -96,7 +96,7 @@ impl Controller {
                 full_repo_name,
                 pull_request,
             } => {
-                self.remove_pull(&full_repo_name, *pull_request);
+                self.finalize_pull(&full_repo_name, *pull_request).await;
             }
 
             ControllerRequest::InstallationCreated { installation } => {
@@ -224,12 +224,100 @@ impl Controller {
     }
 
     /// Purge a pull request from memory, excluding it from conflict detection.
+    /// If a request contains original articles and has just been merged, send notifications to pull requests with translations
+    /// (https://github.com/TicClick/observatory/issues/12 has the rationale).
     ///
     /// This should be done only when a pull request is closed or merged.
-    fn remove_pull(&self, full_repo_name: &str, closed_pull: PullRequest) {
+    async fn finalize_pull(&self, full_repo_name: &str, closed_pull: PullRequest) {
+        if closed_pull.merged {
+            if let Some(pulls_map) = self.memory.pulls(full_repo_name) {
+                let (pending_updates, conflicts_to_remove) = self
+                    .refresh_conflicts(
+                        full_repo_name,
+                        pulls_map,
+                        &closed_pull,
+                        ConflictType::IncompleteTranslation,
+                    )
+                    .await;
+                if !pending_updates.is_empty() {
+                    let _ = self
+                        .send_updates(pending_updates, conflicts_to_remove, full_repo_name)
+                        .await;
+                }
+            }
+        }
+
         self.memory.remove_pull(full_repo_name, &closed_pull);
         self.conflicts
             .remove_conflicts_by_pull(full_repo_name, closed_pull.number);
+    }
+
+    /// Compare the new pull with existing ones for conflicts:
+    /// - Known conflicts (same kind + same file set) are skipped, otherwise memory is updated.
+    /// - Conflicts that don't occur anymore are removed from cache, with subsequent comment removal.
+    async fn refresh_conflicts(
+        &self,
+        full_repo_name: &str,
+        pulls_map: HashMap<i32, PullRequest>,
+        new_pull: &PullRequest,
+        kind_to_match: ConflictType,
+    ) -> (
+        HashMap<i32, Vec<conflicts::Conflict>>,
+        HashMap<i32, Vec<conflicts::Conflict>>,
+    ) {
+        let mut pulls: Vec<PullRequest> = pulls_map
+            .into_values()
+            .filter(|other| other.number != new_pull.number)
+            .collect();
+        pulls.sort_by_key(|pr| pr.created_at);
+
+        let mut pending_updates: HashMap<i32, Vec<conflicts::Conflict>> = HashMap::new();
+        let mut conflicts_to_remove: HashMap<i32, Vec<conflicts::Conflict>> = HashMap::new();
+        for other_pull in pulls {
+            let conflicts = conflicts::compare_pulls(new_pull, &other_pull);
+
+            // Note: after a conflict disappears, any interfering updates to the original pull will flip the roles:
+            // the pull which triggered the new conflict will be considered an original. This is a scenario rare enough
+            // (think indecisive people bringing changes in and out), but one that we should consider and have written down.
+            // Also, it's simpler than maintaining a cache of "inactive" conflicts, at least for now.
+            // Related test: test_new_comment_is_posted_after_removal_in_different_pull
+
+            let removed_conflicts = self.conflicts.remove_missing(
+                full_repo_name,
+                other_pull.number,
+                new_pull.number,
+                &conflicts,
+            );
+
+            for removed in removed_conflicts {
+                conflicts_to_remove
+                    .entry(removed.trigger)
+                    .or_default()
+                    .push(removed);
+            }
+
+            // This always triggers notifications for `IncompleteTranslation` conflicts -- this is intended,
+            // since this function is called when they're merged. `Overlap` conflicts may not require an update if their
+            // contents are identical.
+            for conflict in conflicts {
+                match self.conflicts.upsert(full_repo_name, &conflict.clone()) {
+                    Some(uc) => {
+                        if uc.kind == kind_to_match {
+                            pending_updates.entry(uc.trigger).or_default().push(uc);
+                        }
+                    }
+                    None => {
+                        if conflict.kind == kind_to_match {
+                            pending_updates
+                                .entry(conflict.trigger)
+                                .or_default()
+                                .push(conflict);
+                        }
+                    }
+                }
+            }
+        }
+        (pending_updates, conflicts_to_remove)
     }
 
     async fn update_pull(
@@ -255,6 +343,8 @@ impl Controller {
     ///
     /// If `trigger_updates` is set, check if the update conflicts with existing pull requests,
     /// and make its author aware (or other PRs' owners, in rare cases). For details, see [`helpers::conflicts::Storage`].
+    ///
+    /// Translators are not notified on changes in original articles -- see finalize_pull() for that.
     async fn upsert_pull(
         &self,
         full_repo_name: &str,
@@ -269,50 +359,9 @@ impl Controller {
         self.memory.insert_pull(full_repo_name, new_pull.clone());
 
         if let Some(pulls_map) = self.memory.pulls(full_repo_name) {
-            let mut pulls: Vec<PullRequest> = pulls_map
-                .into_values()
-                .filter(|other| other.number != new_pull.number)
-                .collect();
-            pulls.sort_by_key(|pr| pr.created_at);
-
-            // Compare the new pull with existing ones for conflicts:
-            // - Known conflicts (same kind + same file set) are skipped, otherwise memory is updated.
-            // - Conflicts that don't occur anymore are removed from cache, with subsequent comment removal.
-
-            let mut pending_updates: HashMap<i32, Vec<conflicts::Conflict>> = HashMap::new();
-            let mut conflicts_to_remove: HashMap<i32, Vec<conflicts::Conflict>> = HashMap::new();
-            for other_pull in pulls {
-                let conflicts = conflicts::compare_pulls(&new_pull, &other_pull);
-
-                // Note: after a conflict disappears, any interfering updates to the original pull will flip the roles:
-                // the pull which triggered the new conflict will be considered an original. This is a scenario rare enough
-                // (think indecisive people bringing changes in and out), but one that we should consider and have written down.
-                // Also, it's simpler than maintaining a cache of "inactive" conflicts, at least for now.
-                // Related test: test_new_comment_is_posted_after_removal_in_different_pull
-
-                let removed_conflicts = self.conflicts.remove_missing(
-                    full_repo_name,
-                    other_pull.number,
-                    new_pull.number,
-                    &conflicts,
-                );
-                for removed in removed_conflicts {
-                    conflicts_to_remove
-                        .entry(removed.trigger)
-                        .or_default()
-                        .push(removed);
-                }
-
-                for conflict in conflicts {
-                    if let Some(updated_conflict) = self.conflicts.upsert(full_repo_name, &conflict)
-                    {
-                        pending_updates
-                            .entry(updated_conflict.trigger)
-                            .or_default()
-                            .push(updated_conflict);
-                    }
-                }
-            }
+            let (pending_updates, conflicts_to_remove) = self
+                .refresh_conflicts(full_repo_name, pulls_map, &new_pull, ConflictType::Overlap)
+                .await;
             if trigger_updates {
                 self.send_updates(pending_updates, conflicts_to_remove, full_repo_name)
                     .await?;
@@ -325,7 +374,7 @@ impl Controller {
     /// `(conflict source, conflict type)` combination.
     ///
     /// Every comment contains a machine-readable YAML header, hidden between separate HTML comment tags.
-    /// The header is a reliable alternative to parsing everything from comments (provided no one tampers with them).
+    /// The header is a reliable alternative to parsing everything from comments (provided no one tampers with it).
     ///
     /// Comments already left by the bot are reused for updates, both to avoid spam and make notification process easier.
     /// Comments about obsolete conflicts are removed; the lists of conflicts to update and to remove have no intersection.

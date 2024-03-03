@@ -107,6 +107,7 @@ impl GitHubServer {
             created_at: now,
             updated_at: now,
             diff: Some(make_simple_diff(file_names)),
+            merged: false,
         };
         pulls.insert(number, new_pull.clone());
         new_pull

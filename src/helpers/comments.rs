@@ -9,7 +9,7 @@ use crate::helpers::ToMarkdown;
 pub const OVERLAP_TEMPLATE: &str = "Someone else has edited same files as you did. Please check their changes in case they conflict with yours:\n";
 
 /// Warn the author of a translation request about new changes in the original article.
-pub const INCOMPLETE_TRANSLATION_TEMPLATE: &str = "Your translation may be missing new pending changes to English articles. Please update your translation after they are merged:\n";
+pub const INCOMPLETE_TRANSLATION_TEMPLATE: &str = "Your translation may be missing new information from corresponding English articles. Please update your translation according to the merged changes:\n";
 
 pub const HTML_COMMENT_START: &str = "<!--";
 pub const HTML_COMMENT_END: &str = "-->";
