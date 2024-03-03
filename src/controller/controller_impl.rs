@@ -229,7 +229,7 @@ impl Controller {
     ///
     /// This should be done only when a pull request is closed or merged.
     async fn finalize_pull(&self, full_repo_name: &str, closed_pull: PullRequest) {
-        if closed_pull.merged {
+        if closed_pull.is_merged() {
             if let Some(pulls_map) = self.memory.pulls(full_repo_name) {
                 let (pending_updates, conflicts_to_remove) = self
                     .refresh_conflicts(

@@ -33,7 +33,18 @@ pub struct PullRequest {
     pub updated_at: chrono::DateTime<chrono::Utc>,
     #[serde(skip)]
     pub diff: Option<unidiff::PatchSet>,
+
+    #[serde(default)]
+    pub merged_at: Option<chrono::DateTime<chrono::Utc>>,
+    
+    #[serde(default)]
     pub merged: bool,
+}
+
+impl PullRequest {
+    pub fn is_merged(&self) -> bool {
+        self.merged || self.merged_at.is_some()
+    }
 }
 
 // https://docs.github.com/en/developers/webhooks-and-events/webhooks/webhook-events-and-payloads#pull_request
