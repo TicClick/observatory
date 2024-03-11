@@ -36,7 +36,7 @@ pub struct PullRequest {
 
     #[serde(default)]
     pub merged_at: Option<chrono::DateTime<chrono::Utc>>,
-    
+
     #[serde(default)]
     pub merged: bool,
 }
