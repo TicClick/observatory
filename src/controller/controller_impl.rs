@@ -228,9 +228,19 @@ impl Controller {
     /// (https://github.com/TicClick/observatory/issues/12 has the rationale).
     ///
     /// This should be done only when a pull request is closed or merged.
-    async fn finalize_pull(&self, full_repo_name: &str, closed_pull: PullRequest) {
+    async fn finalize_pull(&self, full_repo_name: &str, mut closed_pull: PullRequest) {
         if closed_pull.is_merged() {
             if let Some(pulls_map) = self.memory.pulls(full_repo_name) {
+                if let Some(p) = pulls_map.get(&closed_pull.number) {
+                    closed_pull = p.clone();
+                } else {
+                    closed_pull.diff = self
+                        .github
+                        .read_pull_diff(full_repo_name, closed_pull.number)
+                        .await
+                        .ok();
+                }
+
                 let (pending_updates, conflicts_to_remove) = self
                     .refresh_conflicts(
                         full_repo_name,
