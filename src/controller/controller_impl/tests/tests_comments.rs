@@ -367,44 +367,11 @@ async fn test_post_comment_on_pull_request_merge() {
     c2.assert();
     c4.assert();
 
-    // After #4 is added, and #3 is merged, two more comments follow.
-
-    let incomplete_translation_comment_1 = Conflict::incomplete_translation(
-        pulls[2].number,
-        pulls[0].number,
-        pulls[0].html_url.clone(),
-        vec!["wiki/Article/en.md".to_string()],
-    )
-    .to_markdown();
-    let c3_incomplete_translation_1 = server
-        .mock_pull_comments(
-            "test/repo",
-            pulls[2].number,
-            Some(incomplete_translation_comment_1),
-        )
-        .expect(1);
-
-    let incomplete_translation_comment_4 = Conflict::incomplete_translation(
-        pulls[2].number,
-        pulls[3].number,
-        pulls[3].html_url.clone(),
-        vec!["wiki/New_article/en.md".to_string()],
-    )
-    .to_markdown();
-    let c3_incomplete_translation_4 = server
-        .mock_pull_comments(
-            "test/repo",
-            pulls[2].number,
-            Some(incomplete_translation_comment_4),
-        )
-        .expect(1);
+    // After #4 is added, and #3 is merged, no comments should appear.
 
     let mut merged_pull = pulls[2].clone();
     merged_pull.merged = true;
     c.finalize_pull("test/repo", merged_pull).await;
-
-    c3_incomplete_translation_1.assert();
-    c3_incomplete_translation_4.assert();
 }
 
 #[tokio::test]

@@ -328,10 +328,26 @@ impl Controller {
             // since this function is called when they're merged. `Overlap` conflicts may not require an update if their
             // contents are identical.
             for conflict in conflicts {
+                // Remove conflicts related to translations getting merged if their overlap with other PRs doesn't consists of translations.
+                // See: https://github.com/TicClick/observatory/issues/25.
+                if conflict.kind == kind_to_match
+                    && kind_to_match == ConflictType::IncompleteTranslation
+                    && conflict.file_set.iter().all(|f| f.ends_with("en.md"))
+                {
+                    conflicts_to_remove
+                        .entry(conflict.trigger)
+                        .or_default()
+                        .push(conflict.clone());
+                    continue;
+                }
+
                 match self.conflicts.upsert(full_repo_name, &conflict.clone()) {
-                    Some(uc) => {
-                        if uc.kind == kind_to_match {
-                            pending_updates.entry(uc.trigger).or_default().push(uc);
+                    Some(updated_conflict) => {
+                        if updated_conflict.kind == kind_to_match {
+                            pending_updates
+                                .entry(updated_conflict.trigger)
+                                .or_default()
+                                .push(updated_conflict);
                         }
                     }
                     None => {
@@ -345,7 +361,7 @@ impl Controller {
                 }
             }
         }
-        
+
         log::info!(
             "Result of conflict refresh for pull #{}, type {:?}: SAVING new conflicts {:?}, REMOVING conflicts {:?}",
             new_pull.number, kind_to_match, pending_updates, conflicts_to_remove
