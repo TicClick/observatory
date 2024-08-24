@@ -229,6 +229,11 @@ impl Controller {
     ///
     /// This should be done only when a pull request is closed or merged.
     async fn finalize_pull(&self, full_repo_name: &str, mut closed_pull: PullRequest) {
+        log::info!(
+            "Finalizing pull #{} (merged: {})",
+            closed_pull.number,
+            closed_pull.is_merged()
+        );
         if closed_pull.is_merged() {
             if let Some(pulls_map) = self.memory.pulls(full_repo_name) {
                 if let Some(p) = pulls_map.get(&closed_pull.number) {
@@ -275,6 +280,11 @@ impl Controller {
         HashMap<i32, Vec<conflicts::Conflict>>,
         HashMap<i32, Vec<conflicts::Conflict>>,
     ) {
+        log::info!(
+            "Running conflict refresh procedure for pull #{}, looking for conflict type {:?}",
+            new_pull.number,
+            kind_to_match
+        );
         let mut pulls: Vec<PullRequest> = pulls_map
             .into_values()
             .filter(|other| other.number != new_pull.number)
@@ -285,6 +295,14 @@ impl Controller {
         let mut conflicts_to_remove: HashMap<i32, Vec<conflicts::Conflict>> = HashMap::new();
         for other_pull in pulls {
             let conflicts = conflicts::compare_pulls(new_pull, &other_pull);
+            if !conflicts.is_empty() {
+                log::info!(
+                    "Pull #{}: found conflicts with #{}: {:?}",
+                    new_pull.number,
+                    other_pull.number,
+                    conflicts
+                )
+            }
 
             // Note: after a conflict disappears, any interfering updates to the original pull will flip the roles:
             // the pull which triggered the new conflict will be considered an original. This is a scenario rare enough
@@ -327,6 +345,11 @@ impl Controller {
                 }
             }
         }
+        
+        log::info!(
+            "Result of conflict refresh for pull #{}, type {:?}: SAVING new conflicts {:?}, REMOVING conflicts {:?}",
+            new_pull.number, kind_to_match, pending_updates, conflicts_to_remove
+        );
         (pending_updates, conflicts_to_remove)
     }
 
