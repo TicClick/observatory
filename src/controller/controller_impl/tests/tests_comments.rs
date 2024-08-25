@@ -6,6 +6,7 @@ use super::*;
 #[tokio::test]
 async fn test_no_conflict_no_comment() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -29,6 +30,7 @@ async fn test_no_conflict_no_comment() {
 #[tokio::test]
 async fn test_one_conflict_one_comment() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -68,6 +70,7 @@ async fn test_one_conflict_one_comment() {
 #[tokio::test]
 async fn test_one_pull_and_conflict_one_comment() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -172,6 +175,7 @@ async fn test_one_pull_and_conflict_one_comment() {
 #[tokio::test]
 async fn test_one_pull_and_conflict_one_comment_updated() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -274,6 +278,7 @@ async fn test_one_pull_and_conflict_one_comment_updated() {
 #[tokio::test]
 async fn test_post_comment_on_pull_request_merge() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -405,6 +410,7 @@ async fn test_post_comment_on_pull_request_merge() {
 #[tokio::test]
 async fn test_obsolete_comment_is_removed() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -463,6 +469,7 @@ async fn test_obsolete_comment_is_removed() {
 #[tokio::test]
 async fn test_only_target_comment_is_removed() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -588,6 +595,7 @@ async fn test_only_target_comment_is_removed() {
 #[tokio::test]
 async fn test_new_comment_is_posted_after_removal_in_different_pull() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 

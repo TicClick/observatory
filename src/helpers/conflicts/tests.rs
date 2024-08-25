@@ -64,9 +64,9 @@ fn article_basic() {
     assert_ne!(original, translation);
 }
 
-#[test]
-fn different_paths_no_conflict() {
-    let mut gh = test::GitHubServer::new();
+#[tokio::test]
+async fn different_paths_no_conflict() {
+    let mut gh = test::GitHubServer::new().await;
 
     let existing_pull = gh.make_pull("test/repo", &["wiki/First_article/en.md"]);
     let new_pull = gh.make_pull("test/repo", &["wiki/Second_article/en.md"]);
@@ -74,9 +74,9 @@ fn different_paths_no_conflict() {
     assert!(compare_pulls(&new_pull, &existing_pull).is_empty());
 }
 
-#[test]
-fn no_markdown_no_conflict() {
-    let mut gh = test::GitHubServer::new();
+#[tokio::test]
+async fn no_markdown_no_conflict() {
+    let mut gh = test::GitHubServer::new().await;
 
     let existing_pull = gh.make_pull("test/repo", &["wiki/First_article/img/test.png"]);
     let new_pull = gh.make_pull("test/repo", &["wiki/First_article/img/test.png"]);
@@ -84,9 +84,9 @@ fn no_markdown_no_conflict() {
     assert!(compare_pulls(&new_pull, &existing_pull).is_empty());
 }
 
-#[test]
-fn single_file_overlap() {
-    let mut gh = test::GitHubServer::new();
+#[tokio::test]
+async fn single_file_overlap() {
+    let mut gh = test::GitHubServer::new().await;
 
     let existing_pull = gh.make_pull("test/repo", &["wiki/Article/en.md"]);
     let new_pull = gh.make_pull("test/repo", &["wiki/Article/en.md"]);
@@ -102,9 +102,9 @@ fn single_file_overlap() {
     );
 }
 
-#[test]
-fn multiple_files_overlap() {
-    let mut gh = test::GitHubServer::new();
+#[tokio::test]
+async fn multiple_files_overlap() {
+    let mut gh = test::GitHubServer::new().await;
 
     let existing_pull = gh.make_pull(
         "test/repo",
@@ -151,9 +151,9 @@ fn multiple_files_overlap() {
     );
 }
 
-#[test]
-fn existing_translation_becomes_incomplete() {
-    let mut gh = test::GitHubServer::new();
+#[tokio::test]
+async fn existing_translation_becomes_incomplete() {
+    let mut gh = test::GitHubServer::new().await;
 
     let existing_pull = gh.make_pull("test/repo", &["wiki/Article/ru.md"]);
     let new_pull = gh.make_pull("test/repo", &["wiki/Article/en.md"]);
@@ -169,9 +169,9 @@ fn existing_translation_becomes_incomplete() {
     );
 }
 
-#[test]
-fn new_translation_marked_as_incomplete() {
-    let mut gh = test::GitHubServer::new();
+#[tokio::test]
+async fn new_translation_marked_as_incomplete() {
+    let mut gh = test::GitHubServer::new().await;
 
     let existing_pull = gh.make_pull("test/repo", &["wiki/Article/en.md"]);
     let new_pull = gh.make_pull("test/repo", &["wiki/Article/ru.md"]);

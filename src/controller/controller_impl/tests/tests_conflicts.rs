@@ -5,6 +5,7 @@ use crate::helpers::conflicts::Conflict;
 #[tokio::test]
 async fn test_add_pull() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -24,6 +25,7 @@ async fn test_add_pull() {
 #[tokio::test]
 async fn test_simple_overlap_originals() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -53,6 +55,7 @@ async fn test_simple_overlap_originals() {
 #[tokio::test]
 async fn test_simple_overlap_translations() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -82,6 +85,7 @@ async fn test_simple_overlap_translations() {
 #[tokio::test]
 async fn test_different_translations_do_not_overlap() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -103,6 +107,7 @@ async fn test_different_translations_do_not_overlap() {
 #[tokio::test]
 async fn test_simple_early_incomplete_translation() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -132,6 +137,7 @@ async fn test_simple_early_incomplete_translation() {
 #[tokio::test]
 async fn test_simple_late_incomplete_translation() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -161,6 +167,7 @@ async fn test_simple_late_incomplete_translation() {
 #[tokio::test]
 async fn test_multiple_overlapping_changes() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -204,6 +211,7 @@ async fn test_multiple_overlapping_changes() {
 #[tokio::test]
 async fn test_multiple_incomplete_translations() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -247,6 +255,7 @@ async fn test_multiple_incomplete_translations() {
 #[tokio::test]
 async fn test_incomplete_translation_multiple_conflicts() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -290,6 +299,7 @@ async fn test_incomplete_translation_multiple_conflicts() {
 #[tokio::test]
 async fn test_overlap_no_extra_files_on_update() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -328,6 +338,7 @@ async fn test_overlap_no_extra_files_on_update() {
 #[tokio::test]
 async fn test_overlap_file_set_update_in_trigger_recognized() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -371,6 +382,7 @@ async fn test_overlap_file_set_update_in_trigger_recognized() {
 #[tokio::test]
 async fn test_overlap_double_update_recognized() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -419,6 +431,7 @@ async fn test_overlap_double_update_recognized() {
 #[tokio::test]
 async fn test_early_incomplete_translation_update_no_unrelated_files() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -456,6 +469,7 @@ async fn test_early_incomplete_translation_update_no_unrelated_files() {
 #[tokio::test]
 async fn test_incomplete_translation_original_update_recognized() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -499,6 +513,7 @@ async fn test_incomplete_translation_original_update_recognized() {
 #[tokio::test]
 async fn test_incomplete_translation_double_update() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -547,6 +562,7 @@ async fn test_incomplete_translation_double_update() {
 #[tokio::test]
 async fn test_late_incomplete_translation_update_no_extra_files() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -584,6 +600,7 @@ async fn test_late_incomplete_translation_update_no_extra_files() {
 #[tokio::test]
 async fn test_incomplete_translation_update_recognized() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -627,6 +644,7 @@ async fn test_incomplete_translation_update_recognized() {
 #[tokio::test]
 async fn test_outdated_translation_produces_single_conflict() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -656,6 +674,7 @@ async fn test_outdated_translation_produces_single_conflict() {
 #[tokio::test]
 async fn test_three_conflicts_at_once() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -707,6 +726,7 @@ async fn test_three_conflicts_at_once() {
 #[tokio::test]
 async fn test_closed_pull_is_removed() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -725,6 +745,7 @@ async fn test_closed_pull_is_removed() {
 #[tokio::test]
 async fn test_closed_pull_conflicts_removed() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -750,6 +771,7 @@ async fn test_closed_pull_conflicts_removed() {
 #[tokio::test]
 async fn test_closed_pull_related_conflicts_removed() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -777,6 +799,7 @@ async fn test_closed_pull_related_conflicts_removed() {
 #[tokio::test]
 async fn test_obsolete_conflict_removed() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -802,6 +825,7 @@ async fn test_obsolete_conflict_removed() {
 #[tokio::test]
 async fn test_only_obsolete_conflict_is_removed_overlap() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -840,6 +864,7 @@ async fn test_only_obsolete_conflict_is_removed_overlap() {
 #[tokio::test]
 async fn test_only_obsolete_conflict_is_removed_incomplete_translation() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -879,6 +904,7 @@ async fn test_only_obsolete_conflict_is_removed_incomplete_translation() {
 #[tokio::test]
 async fn test_non_article_files_are_skipped() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
