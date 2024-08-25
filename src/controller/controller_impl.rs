@@ -229,6 +229,11 @@ impl Controller {
     ///
     /// This should be done only when a pull request is closed or merged.
     async fn finalize_pull(&self, full_repo_name: &str, mut closed_pull: PullRequest) {
+        log::info!(
+            "Finalizing pull #{} (merged: {})",
+            closed_pull.number,
+            closed_pull.is_merged()
+        );
         if closed_pull.is_merged() {
             if let Some(pulls_map) = self.memory.pulls(full_repo_name) {
                 if let Some(p) = pulls_map.get(&closed_pull.number) {
@@ -275,6 +280,11 @@ impl Controller {
         HashMap<i32, Vec<conflicts::Conflict>>,
         HashMap<i32, Vec<conflicts::Conflict>>,
     ) {
+        log::info!(
+            "Running conflict refresh procedure for pull #{}, looking for conflict type {:?}",
+            new_pull.number,
+            kind_to_match
+        );
         let mut pulls: Vec<PullRequest> = pulls_map
             .into_values()
             .filter(|other| other.number != new_pull.number)
@@ -285,6 +295,14 @@ impl Controller {
         let mut conflicts_to_remove: HashMap<i32, Vec<conflicts::Conflict>> = HashMap::new();
         for other_pull in pulls {
             let conflicts = conflicts::compare_pulls(new_pull, &other_pull);
+            if !conflicts.is_empty() {
+                log::info!(
+                    "Pull #{}: found conflicts with #{}: {:?}",
+                    new_pull.number,
+                    other_pull.number,
+                    conflicts
+                )
+            }
 
             // Note: after a conflict disappears, any interfering updates to the original pull will flip the roles:
             // the pull which triggered the new conflict will be considered an original. This is a scenario rare enough
@@ -310,10 +328,26 @@ impl Controller {
             // since this function is called when they're merged. `Overlap` conflicts may not require an update if their
             // contents are identical.
             for conflict in conflicts {
+                // Remove conflicts related to translations getting merged if their overlap with other PRs doesn't consists of translations.
+                // See: https://github.com/TicClick/observatory/issues/25.
+                if conflict.kind == kind_to_match
+                    && kind_to_match == ConflictType::IncompleteTranslation
+                    && conflict.file_set.iter().all(|f| f.ends_with("en.md"))
+                {
+                    conflicts_to_remove
+                        .entry(conflict.trigger)
+                        .or_default()
+                        .push(conflict.clone());
+                    continue;
+                }
+
                 match self.conflicts.upsert(full_repo_name, &conflict.clone()) {
-                    Some(uc) => {
-                        if uc.kind == kind_to_match {
-                            pending_updates.entry(uc.trigger).or_default().push(uc);
+                    Some(updated_conflict) => {
+                        if updated_conflict.kind == kind_to_match {
+                            pending_updates
+                                .entry(updated_conflict.trigger)
+                                .or_default()
+                                .push(updated_conflict);
                         }
                     }
                     None => {
@@ -327,6 +361,11 @@ impl Controller {
                 }
             }
         }
+
+        log::info!(
+            "Result of conflict refresh for pull #{}, type {:?}: SAVING new conflicts {:?}, REMOVING conflicts {:?}",
+            new_pull.number, kind_to_match, pending_updates, conflicts_to_remove
+        );
         (pending_updates, conflicts_to_remove)
     }
 

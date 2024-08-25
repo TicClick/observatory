@@ -929,3 +929,46 @@ async fn test_non_article_files_are_skipped() {
     assert!(c.conflicts.by_trigger("test/repo", 1).is_empty());
     assert!(c.conflicts.by_trigger("test/repo", 2).is_empty());
 }
+
+#[tokio::test]
+async fn test_no_notification_on_translation_merge_with_existing_conflicts() {
+    let mut server = GitHubServer::new()
+        .await
+        .with_default_github_app()
+        .with_default_app_installations();
+
+    let mut pulls = [
+        server.make_pull(
+            "test/repo",
+            &[
+                "wiki/Medals/Unlock_requirements/Hush-hush/en.md",
+                "wiki/Medals/Unlock_requirements/en.md",
+            ],
+        ),
+        server.make_pull(
+            "test/repo",
+            &[
+                "wiki/Medals/Unlock_requirements/Beatmap_challenge_packs/zh.md",
+                "wiki/Medals/Unlock_requirements/Beatmap_packs/zh.md",
+                "wiki/Medals/Unlock_requirements/Beatmap_spotlights/zh.md",
+                "wiki/Medals/Unlock_requirements/Dedication/zh.md",
+                "wiki/Medals/Unlock_requirements/Mod_introduction/zh.md",
+                "wiki/Medals/Unlock_requirements/Seasonal_spotlights/zh.md",
+                "wiki/Medals/Unlock_requirements/Skill/zh.md",
+                "wiki/Medals/Unlock_requirements/zh.md",
+                "wiki/Medals/zh.md",
+            ],
+        ),
+    ];
+
+    server = server.with_pulls("test/repo", &pulls);
+
+    let c = new_controller(&server, true).await;
+    for p in pulls.iter() {
+        c.upsert_pull("test/repo", p.clone(), false).await.unwrap();
+    }
+
+    pulls.last_mut().unwrap().merged = true;
+    c.finalize_pull("test/repo", pulls.last().unwrap().clone())
+        .await;
+}
