@@ -159,8 +159,8 @@ impl GitHubServer {
 }
 
 impl GitHubServer {
-    pub fn new() -> Self {
-        let server = mockito::Server::new();
+    pub async fn new() -> Self {
+        let server = mockito::Server::new_async().await;
         let gh = GitHub::new(server.url(), server.url());
 
         Self {

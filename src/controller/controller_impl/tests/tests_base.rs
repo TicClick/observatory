@@ -8,6 +8,7 @@ use crate::test::GitHubServer;
 #[tokio::test]
 async fn test_has_control_over() {
     let server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -35,6 +36,7 @@ async fn test_has_control_over() {
 #[tokio::test]
 async fn test_has_control_over_uninitialized() {
     let server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -52,6 +54,7 @@ async fn test_has_control_over_uninitialized() {
 #[tokio::test]
 async fn test_run_forever_stops_after_transmitter_is_destroyed() {
     let server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -73,6 +76,7 @@ async fn test_run_forever_stops_after_transmitter_is_destroyed() {
 #[tokio::test]
 async fn test_handle_message_init() {
     let server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -99,6 +103,7 @@ async fn test_handle_message_init() {
 #[tokio::test]
 async fn test_handle_message_pull_request_created() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -130,6 +135,7 @@ async fn test_handle_message_pull_request_created() {
 #[tokio::test]
 async fn test_handle_message_pull_request_created_and_updated() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -171,6 +177,7 @@ async fn test_handle_message_pull_request_created_and_updated() {
 #[tokio::test]
 async fn test_handle_message_pull_request_closed() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_default_app_installations();
 
@@ -213,7 +220,7 @@ async fn test_handle_message_pull_request_closed() {
 
 #[tokio::test]
 async fn test_handle_message_installation_created() {
-    let mut server = GitHubServer::new().with_default_github_app();
+    let mut server = GitHubServer::new().await.with_default_github_app();
 
     let inst = server.make_installation();
     let inst_id = inst.id;
@@ -245,7 +252,7 @@ async fn test_handle_message_installation_created() {
 
 #[tokio::test]
 async fn test_handle_message_installation_deleted() {
-    let mut server = GitHubServer::new().with_default_github_app();
+    let mut server = GitHubServer::new().await.with_default_github_app();
 
     let inst = server.make_installation();
     let inst_id = inst.id;
@@ -284,7 +291,7 @@ async fn test_handle_message_installation_deleted() {
 
 #[tokio::test]
 async fn test_handle_message_installation_repositories_added() {
-    let mut server = GitHubServer::new().with_default_github_app();
+    let mut server = GitHubServer::new().await.with_default_github_app();
 
     let inst = server.make_installation();
     let inst_id = inst.id;
@@ -325,7 +332,7 @@ async fn test_handle_message_installation_repositories_added() {
 
 #[tokio::test]
 async fn test_handle_message_installation_repositories_removed() {
-    let mut server = GitHubServer::new().with_default_github_app();
+    let mut server = GitHubServer::new().await.with_default_github_app();
 
     let inst = server.make_installation();
     let inst_id = inst.id;

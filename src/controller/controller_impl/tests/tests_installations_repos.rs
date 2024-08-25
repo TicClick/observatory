@@ -4,6 +4,7 @@ use super::*;
 #[tokio::test]
 async fn test_add_installations() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_app_installations(&Vec::new());
 
@@ -28,6 +29,7 @@ async fn test_add_installations() {
 #[tokio::test]
 async fn test_add_installation_repositories_fetched() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_app_installations(&Vec::new());
 
@@ -50,6 +52,7 @@ async fn test_add_installation_repositories_fetched() {
 #[tokio::test]
 async fn test_add_installation_pull_requests_fetched() {
     let mut server = GitHubServer::new()
+        .await
         .with_default_github_app()
         .with_app_installations(&Vec::new());
 
@@ -81,7 +84,7 @@ async fn test_add_installation_pull_requests_fetched() {
 
 #[tokio::test]
 async fn test_add_multiple_repositories_pull_requests_fetched() {
-    let mut server = GitHubServer::new().with_default_github_app();
+    let mut server = GitHubServer::new().await.with_default_github_app();
 
     let installation = server.make_installation();
     let repos = [
@@ -125,7 +128,7 @@ async fn test_add_multiple_repositories_pull_requests_fetched() {
 
 #[tokio::test]
 async fn test_repositories_fetched_during_init() {
-    let mut server = GitHubServer::new().with_default_github_app();
+    let mut server = GitHubServer::new().await.with_default_github_app();
 
     let installation = server.make_installation();
     let repos = [
@@ -145,7 +148,7 @@ async fn test_repositories_fetched_during_init() {
 #[allow(unused_assignments)]
 #[tokio::test]
 async fn test_pulls_fetched_during_init() {
-    let mut server = GitHubServer::new().with_default_github_app();
+    let mut server = GitHubServer::new().await.with_default_github_app();
 
     let installation = server.make_installation();
     let repos = [
@@ -192,7 +195,7 @@ async fn test_pulls_fetched_during_init() {
 #[allow(unused_assignments)]
 #[tokio::test]
 async fn test_delete_installation() {
-    let mut server = GitHubServer::new().with_default_github_app();
+    let mut server = GitHubServer::new().await.with_default_github_app();
 
     let installation = server.make_installation();
     let repos = [
@@ -223,7 +226,7 @@ async fn test_delete_installation() {
 #[allow(unused_assignments)]
 #[tokio::test]
 async fn test_remove_repositories() {
-    let mut server = GitHubServer::new().with_default_github_app();
+    let mut server = GitHubServer::new().await.with_default_github_app();
 
     let installation = server.make_installation();
     let repos = [
@@ -263,7 +266,7 @@ async fn test_remove_repositories() {
 #[allow(unused_assignments)]
 #[tokio::test]
 async fn test_remove_pull() {
-    let mut server = GitHubServer::new().with_default_github_app();
+    let mut server = GitHubServer::new().await.with_default_github_app();
 
     let installation = server.make_installation();
     let repos = [server.make_repo(installation.id, "test/my-repo")];
