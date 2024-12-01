@@ -636,3 +636,68 @@ async fn test_new_comment_is_posted_after_removal_in_different_pull() {
     c.upsert_pull("test/repo", updated_p1, true).await.unwrap();
     new_overlap_mock.assert();
 }
+
+#[allow(unused_assignments)]
+#[tokio::test]
+async fn test_original_merges_trigger_notifications() {
+    let mut server = GitHubServer::new()
+        .await
+        .with_default_github_app()
+        .with_default_app_installations();
+
+    let mut pulls = [
+        server.make_pull("test/repo", &["wiki/Tournaments/Official_support/ko.md"]),
+        server.make_pull(
+            "test/repo",
+            &[
+                "wiki/Tournaments/Official_support/en.md",
+                "wiki/Tournaments/Official_support/es.md",
+                "wiki/Tournaments/Official_support/fr.md",
+            ],
+        ),
+    ];
+
+    server = server.with_pulls("test/repo", &pulls).with_comments(
+        "test/repo",
+        pulls[0].number,
+        &Vec::new(),
+    );
+
+    let c = new_controller(&server, true).await;
+    for p in pulls.iter() {
+        c.upsert_pull("test/repo", p.clone(), false).await.unwrap();
+    }
+
+    let incomplete_translation_text = Conflict::incomplete_translation(
+        pulls[0].number,
+        pulls[1].number,
+        pulls[1].html_url.clone(),
+        vec!["wiki/Tournaments/Official_support/en.md".to_string()],
+    )
+    .to_markdown();
+    let incomplete_translation_comment = server.make_comment(
+        "test/repo",
+        pulls[0].number,
+        incomplete_translation_text.as_str(),
+        "test-app[bot]".into(),
+    );
+    let incomplete_translation_mock = server
+        .mock_pull_comments(
+            "test/repo",
+            pulls[0].number,
+            Some(incomplete_translation_text.clone()),
+        )
+        .expect(1);
+
+    server = server.with_pull("test/repo", &pulls[0]).with_comments(
+        "test/repo",
+        pulls[0].number,
+        &vec![incomplete_translation_comment.clone()],
+    );
+
+    pulls.last_mut().unwrap().merged = true;
+    c.finalize_pull("test/repo", pulls.last().unwrap().clone())
+        .await;
+
+    incomplete_translation_mock.assert();
+}
