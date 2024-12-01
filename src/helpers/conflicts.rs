@@ -328,7 +328,7 @@ impl Storage {
         detected: &[Conflict],
     ) -> Vec<Conflict> {
         if let Some(m) = self.map.lock().unwrap().get_mut(full_repo_name) {
-            let possible_keys = vec![
+            let possible_keys = [
                 make_conflict_key(original, trigger, &ConflictType::Overlap),
                 make_conflict_key(original, trigger, &ConflictType::IncompleteTranslation),
             ];

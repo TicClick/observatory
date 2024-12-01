@@ -333,11 +333,13 @@ impl Controller {
                 if conflict.kind == kind_to_match
                     && kind_to_match == ConflictType::IncompleteTranslation
                     && conflict.file_set.iter().all(|f| f.ends_with("en.md"))
+                    && conflict.trigger == new_pull.number
                 {
                     conflicts_to_remove
                         .entry(conflict.trigger)
                         .or_default()
                         .push(conflict.clone());
+
                     continue;
                 }
 
