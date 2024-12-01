@@ -1,0 +1,36 @@
+name: Deploy
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'GitHub release tag to be deployed'
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_DEPLOYMENT_KEY }}
+          
+      - name: Add SSH key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.SSH_DEPLOYMENT_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Run the deployment script
+        env:
+          HOST: ${{ secrets.SSH_DEPLOYMENT_HOST }}
+          USERNAME: ${{ secrets.SSH_DEPLOYMENT_USER }}
+
+        run: ssh ${USERNAME}@${HOST} "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} GITHUB_TAG=${{ inputs.release_tag }} GITHUB_REPO=${{ github.repository }} $( cat ./deploy.sh )"
