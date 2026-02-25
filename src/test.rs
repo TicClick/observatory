@@ -16,14 +16,70 @@ index 5483f282a0a..2c8c1482b97 100644
 --- a/{0}
 +++ b/{1}
 @@ -5,6 +5,7 @@
- 
+
  ## Test article
- 
+
 +<!-- test -->
  Do whatever you want.
- 
+
  That's it, that's the article."#,
                 file_name, file_name
+            )
+        })
+        .collect();
+    unidiff::PatchSet::from_str(&diff.join("\n")).unwrap()
+}
+
+pub fn make_added_file_diff(file_names: &[&str]) -> unidiff::PatchSet {
+    let diff: Vec<String> = file_names
+        .iter()
+        .map(|file_name| {
+            format!(
+                r#"diff --git a/{0} b/{0}
+new file mode 100644
+index 0000000000..2c8c1482b97
+--- /dev/null
++++ b/{0}
+@@ -0,0 +1,11 @@
++---
++tags:
++  - test
++---
++
++## Test article
++
++Do whatever you want.
++
++That's it, that's the article."#,
+                file_name
+            )
+        })
+        .collect();
+    unidiff::PatchSet::from_str(&diff.join("\n")).unwrap()
+}
+
+pub fn make_deleted_file_diff(file_names: &[&str]) -> unidiff::PatchSet {
+    let diff: Vec<String> = file_names
+        .iter()
+        .map(|file_name| {
+            format!(
+                r#"diff --git a/{0} b/{0}
+deleted file mode 100644
+index 2c8c1482b97..0000000000
+--- a/{0}
++++ /dev/null
+@@ -1,11 +0,0 @@
+----
+-tags:
+-  - test
+----
+-
+-## Test article
+-
+-Do whatever you want.
+-
+-That's it, that's the article."#,
+                file_name
             )
         })
         .collect();
