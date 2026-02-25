@@ -164,7 +164,12 @@ pub fn compare_pulls(
     // (https://github.com/TicClick/observatory/issues/17)
     let article_expr = regex::Regex::new(r"^(..|..-..)\.md$").unwrap();
     let article_filter = |p: &&unidiff::PatchedFile| -> bool {
-        let parts = std::path::Path::new(&p.target_file);
+        // For deleted files, target_file is /dev/null -- check source_file instead
+        let file_to_check = match p.target_file.contains("/dev/null") {
+            true => &p.source_file,
+            false => &p.target_file,
+        };
+        let parts = std::path::Path::new(file_to_check);
         if let Some(filename) = parts.file_name() {
             if let Some(filename_cstr) = filename.to_str() {
                 article_expr.is_match(filename_cstr)

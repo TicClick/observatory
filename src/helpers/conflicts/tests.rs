@@ -186,3 +186,107 @@ async fn new_translation_marked_as_incomplete() {
         )]
     );
 }
+
+#[tokio::test]
+async fn deleted_file_conflict_with_modification() {
+    let mut gh = test::GitHubServer::new().await;
+
+    let pulls = gh.pulls.entry("test/repo".into()).or_default();
+    let modifying_pull = crate::structs::PullRequest {
+        id: 1,
+        number: 1,
+        state: "open".to_string(),
+        title: "Modify file".to_string(),
+        user: crate::structs::Actor {
+            id: 1,
+            login: "user1".to_string(),
+        },
+        html_url: gh.url.pull_url("test/repo", 1),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        diff: Some(test::make_simple_diff(&["wiki/Article/en.md"])),
+        merged_at: None,
+        merged: false,
+    };
+    pulls.insert(1, modifying_pull.clone());
+
+    let deleting_pull = crate::structs::PullRequest {
+        id: 2,
+        number: 2,
+        state: "open".to_string(),
+        title: "Delete file".to_string(),
+        user: crate::structs::Actor {
+            id: 2,
+            login: "user2".to_string(),
+        },
+        html_url: gh.url.pull_url("test/repo", 2),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        diff: Some(test::make_deleted_file_diff(&["wiki/Article/en.md"])),
+        merged_at: None,
+        merged: false,
+    };
+    pulls.insert(2, deleting_pull.clone());
+
+    assert_eq!(
+        compare_pulls(&deleting_pull, &modifying_pull),
+        vec![Conflict::overlap(
+            2,
+            1,
+            gh.url.pull_url("test/repo", 1),
+            vec!["wiki/Article/en.md".to_string()],
+        )]
+    );
+}
+
+#[tokio::test]
+async fn deleted_file_conflict_with_addition() {
+    let mut gh = test::GitHubServer::new().await;
+
+    let pulls = gh.pulls.entry("test/repo".into()).or_default();
+    let adding_pull = crate::structs::PullRequest {
+        id: 1,
+        number: 1,
+        state: "open".to_string(),
+        title: "Add file".to_string(),
+        user: crate::structs::Actor {
+            id: 1,
+            login: "user1".to_string(),
+        },
+        html_url: gh.url.pull_url("test/repo", 1),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        diff: Some(test::make_added_file_diff(&["wiki/Article/de.md"])),
+        merged_at: None,
+        merged: false,
+    };
+    pulls.insert(1, adding_pull.clone());
+
+    let deleting_pull = crate::structs::PullRequest {
+        id: 2,
+        number: 2,
+        state: "open".to_string(),
+        title: "Delete file".to_string(),
+        user: crate::structs::Actor {
+            id: 2,
+            login: "user2".to_string(),
+        },
+        html_url: gh.url.pull_url("test/repo", 2),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        diff: Some(test::make_deleted_file_diff(&["wiki/Article/de.md"])),
+        merged_at: None,
+        merged: false,
+    };
+    pulls.insert(2, deleting_pull.clone());
+
+    assert_eq!(
+        compare_pulls(&deleting_pull, &adding_pull),
+        vec![Conflict::overlap(
+            2,
+            1,
+            gh.url.pull_url("test/repo", 1),
+            vec!["wiki/Article/de.md".to_string()],
+        )]
+    );
+}
