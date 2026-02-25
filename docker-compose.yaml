@@ -1,0 +1,11 @@
+services:
+  observatory:
+    image: observatory:latest
+    build:
+      context: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./runtime:/app/runtime
+    command: ["-c", "/app/runtime/config.yaml"]
+    restart: on-failure

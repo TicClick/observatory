@@ -2,4 +2,10 @@
 tarpaulin-report.html
 config.yaml
 tunnel.sh
-private-key.pem
+
+*.pem
+
+runtime/*
+!runtime/.config.yaml
+
+docker-compose.override.yaml

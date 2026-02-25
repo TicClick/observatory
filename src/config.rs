@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn template_correctness() {
-        let settings = Config::from_path(".config.yaml").unwrap();
+        let settings = Config::from_path("runtime/.config.yaml").unwrap();
         let template = Config {
             server: Server {
                 bind_ip: Ipv4Addr::new(127, 0, 0, 1),
