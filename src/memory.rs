@@ -19,7 +19,7 @@ impl Memory {
     pub fn contains(&self, full_repo_name: &str, pr: &PullRequest) -> bool {
         let g = self.pulls.lock().unwrap();
         g.get(full_repo_name)
-            .map_or(false, |pulls| pulls.contains_key(&pr.number))
+            .is_some_and(|pulls| pulls.contains_key(&pr.number))
     }
 
     pub fn insert_pull(&self, full_repo_name: &str, new_pull: PullRequest) {
