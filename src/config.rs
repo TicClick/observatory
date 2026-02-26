@@ -51,6 +51,7 @@ pub struct GitHub {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Controller {
     pub post_comments: bool,
+    pub reconcile_interval_seconds: u64,
 }
 
 // Unfortunate copypaste: https://serde.rs/remote-derive.html
@@ -90,11 +91,12 @@ mod tests {
             },
             github: GitHub {
                 app_id: "123456".to_string(),
-                app_key_path: "./private-key.pem".to_string(),
+                app_key_path: "/app/runtime/private-key.pem".to_string(),
                 webhook_secret: "iseedeadpeople".to_string(),
             },
             controller: Controller {
                 post_comments: true,
+                reconcile_interval_seconds: 3600,
             },
         };
         assert_eq!(settings, template);

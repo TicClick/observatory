@@ -52,6 +52,10 @@ impl Memory {
             .cloned()
     }
 
+    pub fn repo_names(&self) -> Vec<String> {
+        self.pulls.lock().unwrap().keys().cloned().collect()
+    }
+
     pub fn drop_repository(&self, full_repo_name: &str) {
         self.pulls
             .lock()
