@@ -7,7 +7,7 @@ use eyre::Result;
 
 use observatory::github::GitHub;
 use viz::middleware::limits;
-use viz::{types::State, Router, Server, ServiceMaker};
+use viz::{types::State, Router, Server};
 use viz::{IntoResponse, Response, ResponseExt};
 use viz::{Request, RequestExt, StatusCode};
 
@@ -112,10 +112,10 @@ async fn main() -> Result<()> {
     controller_handle.init().await?;
 
     let ls = viz::types::Limits::new()
-        .insert("bytes", DEFAULT_DATA_LIMIT)
-        .insert("json", DEFAULT_DATA_LIMIT)
-        .insert("payload", DEFAULT_DATA_LIMIT)
-        .insert("text", DEFAULT_DATA_LIMIT);
+        .set("bytes", DEFAULT_DATA_LIMIT)
+        .set("json", DEFAULT_DATA_LIMIT)
+        .set("payload", DEFAULT_DATA_LIMIT)
+        .set("text", DEFAULT_DATA_LIMIT);
 
     let app = Router::new()
         .post(&settings.server.events_endpoint, github_events)
@@ -125,7 +125,8 @@ async fn main() -> Result<()> {
         .with(limits::Config::default().limits(ls));
 
     log::info!("Listening on {}/{}", addr, settings.server.events_endpoint);
-    if let Err(err) = Server::bind(&addr).serve(ServiceMaker::from(app)).await {
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    if let Err(err) = Server::new(listener, app).await {
         log::error!("{:?}", err);
     }
 
