@@ -1,5 +1,6 @@
 server:
   # Local IP to bind to.
+  # Should be 0.0.0.0 when running inside the container.
   bind_ip: 127.0.0.1
 
   # Local port to bind to.
@@ -15,7 +16,7 @@ github:
 
   # Path to a private SHA256 key from https://github.com/settings/apps/{your app name}.
   # It is used to generate JWT, which the app uses for getting per-installation OAuth tokens.
-  app_key_path: "./private-key.pem"
+  app_key_path: "/app/runtime/private-key.pem"
 
   # A secret string which you can specify at https://github.com/settings/apps/{your app name}.
   # It is used to verify that requests are correctly signed and coming from GitHub.
