@@ -11,7 +11,6 @@ GitHub app for detecting overlapping translation changes in [osu! wiki](https://
 
 ```shell
 # local development
-cp docker-compose.override.yaml.example docker-compose.override.yaml
 docker compose up
 
 # or run directly

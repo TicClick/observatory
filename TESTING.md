@@ -12,7 +12,6 @@
 ### with docker
 
 ```shell
-cp docker-compose.override.yaml.example docker-compose.override.yaml
 docker compose up
 ```
 

@@ -1,8 +1,0 @@
-# Local development overrides
-# Copy to docker-compose.override.yaml and customize as needed
-
-services:
-  observatory:
-    image: observatory:latest
-    build:
-      context: .
