@@ -43,6 +43,8 @@ pub enum ControllerRequest {
         installation_id: i64,
         repositories: Vec<Repository>,
     },
+
+    Reconcile,
 }
 
 /// The interface for interacting with the actual controller.
@@ -61,12 +63,29 @@ impl ControllerHandle {
         config: config::Controller,
     ) -> Self {
         let (tx, rx) = mpsc::channel(10);
+        let interval_secs = config.reconcile_interval_seconds;
         tokio::spawn(async move {
             controller_impl::Controller::new(rx, github, app_id, private_key, config)
                 .run_forever()
                 .await
         });
-        Self { sender: tx }
+        let handle = Self { sender: tx };
+        if interval_secs > 0 {
+            let sender = handle.sender.clone();
+            tokio::spawn(async move {
+                let mut timer =
+                    tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+                timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                timer.tick().await; // skip the first immediate tick
+                loop {
+                    timer.tick().await;
+                    if sender.send(ControllerRequest::Reconcile).await.is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        handle
     }
 }
 

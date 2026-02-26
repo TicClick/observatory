@@ -1,5 +1,5 @@
 /// `controller` contains core logic of the app. Refer to [`Controller`] for more details.
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use eyre::Result;
 use tokio::sync::mpsc;
@@ -123,6 +123,10 @@ impl Controller {
                 repositories,
             } => {
                 self.remove_repositories(installation_id, &repositories);
+            }
+
+            ControllerRequest::Reconcile => {
+                self.reconcile().await;
             }
         }
     }
@@ -535,6 +539,59 @@ impl Controller {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Reconcile the in-memory pull request cache against GitHub for every known repository.
+    ///
+    /// This catches PRs that GitHub failed to deliver a `closed` event for, preventing them
+    /// from lingering in the cache and producing stale conflict reports.
+    async fn reconcile(&self) {
+        log::info!("Starting reconciliation of open pull requests");
+        for repo_name in self.memory.repo_names() {
+            if let Err(e) = self.reconcile_repository(&repo_name).await {
+                log::error!("Reconciliation failed for {}: {:?}", repo_name, e);
+            }
+        }
+        log::info!("Reconciliation complete");
+    }
+
+    /// Reconcile a single repository: remove PRs no longer open on GitHub, add any that are missing.
+    async fn reconcile_repository(&self, full_repo_name: &str) -> eyre::Result<()> {
+        let github_pulls = self.github.read_pulls(full_repo_name).await?;
+        let github_numbers: HashSet<i32> = github_pulls.iter().map(|p| p.number).collect();
+
+        let cached_pulls: Vec<PullRequest> = self
+            .memory
+            .pulls(full_repo_name)
+            .map(|m| m.into_values().collect())
+            .unwrap_or_default();
+
+        // PRs in cache but absent from GitHub's open list → closed without an event
+        for pull in &cached_pulls {
+            if !github_numbers.contains(&pull.number) {
+                log::info!(
+                    "Reconciliation: pull #{} in {} is no longer open, finalizing",
+                    pull.number,
+                    full_repo_name
+                );
+                self.finalize_pull(full_repo_name, pull.clone()).await;
+            }
+        }
+
+        // PRs open on GitHub but absent from cache → missed "opened" event
+        let cached_numbers: HashSet<i32> = cached_pulls.iter().map(|p| p.number).collect();
+        for pull in github_pulls {
+            if !cached_numbers.contains(&pull.number) {
+                log::info!(
+                    "Reconciliation: pull #{} in {} is missing from cache, adding",
+                    pull.number,
+                    full_repo_name
+                );
+                self.upsert_pull(full_repo_name, pull, false).await?;
+            }
+        }
+
         Ok(())
     }
 

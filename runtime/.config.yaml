@@ -30,3 +30,8 @@ logging:
 controller:
   # Create comments with notifications about pull conflicts.
   post_comments: true
+
+  # How often (in seconds) to reconcile the list of open PRs against GitHub.
+  # This catches PRs whose "closed" event was never delivered by GitHub.
+  # Set to 0 to disable periodic reconciliation.
+  reconcile_interval_seconds: 3600

@@ -44,6 +44,7 @@ async fn make_controller(
         TEST_APP_PRIVATE_KEY.to_string(),
         crate::config::Controller {
             post_comments: true,
+            reconcile_interval_seconds: 0,
         },
     );
     if init {

@@ -379,3 +379,50 @@ async fn test_handle_message_installation_repositories_removed() {
         vec![retained_repo]
     );
 }
+
+#[tokio::test]
+async fn test_reconcile_removes_closed_pull() {
+    let mut server = GitHubServer::new().await.with_default_github_app();
+
+    let inst = server.make_installation();
+    let inst_id = inst.id;
+    let repo = server.make_repo(inst_id, "test/repo");
+
+    let pr1 = server.make_pull("test/repo", &["wiki/Article/en.md"]);
+    let pr2 = server.make_pull("test/repo", &["wiki/Other/en.md"]);
+    server = server
+        .with_app_installations(&[(inst, vec![repo])])
+        .with_pulls("test/repo", &[pr1.clone(), pr2.clone()]);
+
+    let (request_tx, c) = make_controller(&server, true).await;
+    server
+        .server
+        .mock(
+            "GET",
+            "/repos/test/repo/pulls?state=open&direction=asc&sort=created&per_page=100&page=1",
+        )
+        .with_status(200)
+        .with_body(serde_json::to_string(&[pr2.clone()]).unwrap())
+        .create();
+
+    let ctrl = Arc::new(Mutex::new(c));
+    let _ = request_tx.send(ControllerRequest::Reconcile).await;
+
+    drop(request_tx);
+    let cloned = ctrl.clone();
+    tokio::join!(tokio::spawn(async move {
+        cloned.lock().await.run_forever().await;
+    }))
+    .0
+    .unwrap();
+
+    let pulls = ctrl.lock().await.memory.pulls("test/repo").unwrap();
+    assert!(
+        pulls.contains_key(&pr2.number),
+        "pr2 should remain in cache"
+    );
+    assert!(
+        !pulls.contains_key(&pr1.number),
+        "pr1 should be removed: it is no longer open on GitHub"
+    );
+}
